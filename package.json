@@ -1,0 +1,14 @@
+{
+  "name": "gcd-playbook",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "GCD Playbook - 개인 Gemini API 연동",
+  "scripts": {
+    "start": "vercel dev",
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "google-auth-library": "^9.14.0"
+  }
+}
