@@ -9,10 +9,12 @@ var currentPart='design';
 var wikiPageCache={};
 var wikiContextCache={};
 var wikiAssetsCache={};
+var wikiPageLoadPromise={};   // 파트별 in-flight 요청 중복 방지
+var wikiAssetsLoadPromise={};
 var defaultSlides=[]; // 위키 이미지만 사용 (imgur 미사용)
 var slides=defaultSlides.slice();
 var slidesByWorkType={};
-let selCat,selWork,selWeeks,curSlide=0;
+let selCat,selWork,selWeeks,selSteps,selStepLabels=[],curSlide=0;
 function partDisplayName(id){ return (id||'').charAt(0).toUpperCase()+(id||'').slice(1).toLowerCase(); }
 var creativeAssetsMode=false;  // IP 버튼 클릭 시 true → 01. CREATIVE ASSETS 표시
 function updateAssetPanelTitle(){
@@ -83,8 +85,27 @@ function bindEvents(){
   if(reqDate)reqDate.onchange=function(){if(this.value&&selWeeks){const dl=document.getElementById('dlDate');if(dl){dl.value=addBiz(new Date(this.value),selWeeks*5).toISOString().split('T')[0];dl.dispatchEvent(new Event('change'));}}};
   if(dlDate)dlDate.onchange=function(){
     if(!this.value||!selWork)return;
-    const s=new Date(document.getElementById('reqDate').value),e=new Date(this.value),tot=getBiz(s,e),r1=addBiz(s,Math.floor(tot*.5)),r2=addBiz(s,Math.floor(tot*.8));
-    const tlVisual=document.getElementById('tlVisual');if(tlVisual)tlVisual.innerHTML=`<div class="tl-track"><div class="tl-line"></div><div class="tl-ms"><div class="ms-dot"></div><div class="ms-label">시작</div><div class="ms-date">${fmt(s)}</div></div><div class="tl-ms"><div class="ms-dot r1"></div><div class="ms-label r1">R1</div><div class="ms-date">WIP</div></div><div class="tl-ms"><div class="ms-dot r2"></div><div class="ms-label r2">R2</div><div class="ms-date">Near Final</div></div><div class="tl-ms"><div class="ms-dot dl"></div><div class="ms-label dl">완료</div><div class="ms-date">Delivery</div></div></div><div class="tl-phases"><div class="phase r1"><h4>R1 - WIP (50%)</h4><div class="date">${fmt(r1)}</div></div><div class="phase r2"><h4>R2 - Near Final (80%)</h4><div class="date">${fmt(r2)}</div></div><div class="phase dl"><h4>최종 마감</h4><div class="date">${fmt(e)}</div></div></div>`;
+    const s=new Date(document.getElementById('reqDate').value),e=new Date(this.value),tot=getBiz(s,e);
+    var labels=Array.isArray(selStepLabels)&&selStepLabels.length?selStepLabels:[];
+    var n=labels.length>0?labels.length+1:Math.max(2,selSteps||2);
+    var phases=[],msHtml='',phasesHtml='';
+    for(var i=0;i<n;i++){
+      var pct=i===0?0:(i===n-1?100:Math.round((i/(n-1))*100));
+      var d=i===0?s:(i===n-1?e:addBiz(s,Math.floor(tot*(i/(n-1)))));
+      var lbl,sublbl;
+      if(labels.length>0){
+        lbl=i===0?'시작':(i===n-1?labels[labels.length-1]:labels[i-1]);
+        sublbl=i===0?fmt(s):(i===n-1?(labels[labels.length-1].split(/\s*[-–—]\s*/)[1]||'Delivery'):(labels[i-1].split(/\s*[-–—]\s*/)[1]||labels[i-1]));
+      }else{
+        lbl=i===0?'시작':(i===n-1?'완료':'R'+i);
+        sublbl=i===0?fmt(s):(i===n-1?'Delivery':(i===1?'WIP':'R'+i));
+      }
+      var cls=i===0?'':(i===n-1?'dl':'r'+(i));
+      msHtml+='<div class="tl-ms"><div class="ms-dot '+cls+'"></div><div class="ms-label '+cls+'">'+lbl+'</div><div class="ms-date">'+sublbl+'</div></div>';
+      if(i>0)phases.push({lbl:lbl,pct:pct,d:d,cls:cls});
+    }
+    phasesHtml=phases.map(function(p){return '<div class="phase '+p.cls+'"><h4>'+p.lbl+(p.pct<100?' ('+p.pct+'%)':'')+'</h4><div class="date">'+fmt(p.d)+'</div></div>';}).join('');
+    const tlVisual=document.getElementById('tlVisual');if(tlVisual)tlVisual.innerHTML='<div class="tl-track"><div class="tl-line"></div>'+msHtml+'</div><div class="tl-phases">'+phasesHtml+'</div>';
     const formSec=document.getElementById('formSec');if(formSec)formSec.style.display='block';
     const fReqDate=document.getElementById('fReqDate');if(fReqDate)fReqDate.value=document.getElementById('reqDate').value;
     const fWork=document.getElementById('fWork');if(fWork)fWork.value=selWork;
@@ -105,7 +126,7 @@ function runInit(){
   if(!catGrid){ setTimeout(runInit,10); return; }
   initDone=true;
   try{ initDOM(); }catch(e){ console.error('initDOM:',e); initDone=false; }
-  // 파트 목록 및 탭 (Design | Video 등)
+  // 파트 목록 및 탭 + 위키 사이트 접속 최초 1회만 로드
   fetch('/api/parts').then(function(r){ return r.json(); }).then(function(data){
     partIds=Array.isArray(data.parts)?data.parts:[];
     var tabParts=partIds.length>1?partIds:['design','video'];
@@ -116,36 +137,41 @@ function runInit(){
       tabEl.innerHTML=tabParts.map(function(p){ return '<button type="button" class="part-tab'+(p===currentPart?' active':'')+'" data-part="'+p+'">'+partDisplayName(p)+'</button>'; }).join('');
       tabEl.onclick=function(e){ var btn=e.target.closest('.part-tab'); if(btn&&btn.dataset.part)switchPart(btn.dataset.part); };
     }
-    // 모든 파트 위키 어셋 최초 1회 미리 로드 (탭 전환 시 즉시 표시)
-    tabParts.forEach(function(p){ getWikiAssets(p); });
+    loadWikiOnce(tabParts);
   }).catch(function(){
     partIds=['design','video'];
+    var tabParts=['design','video'];
     var wrap=document.getElementById('partTabsWrap');
     var tabEl=document.getElementById('partTabs');
     if(wrap)wrap.style.display='flex';
     if(tabEl){
-      tabEl.innerHTML=['design','video'].map(function(p){ return '<button type="button" class="part-tab'+(p===currentPart?' active':'')+'" data-part="'+p+'">'+partDisplayName(p)+'</button>'; }).join('');
+      tabEl.innerHTML=tabParts.map(function(p){ return '<button type="button" class="part-tab'+(p===currentPart?' active':'')+'" data-part="'+p+'">'+partDisplayName(p)+'</button>'; }).join('');
       tabEl.onclick=function(e){ var btn=e.target.closest('.part-tab'); if(btn&&btn.dataset.part)switchPart(btn.dataset.part); };
     }
-    ['design','video'].forEach(function(p){ getWikiAssets(p); });
+    loadWikiOnce(tabParts);
   });
-  // 01. ASSETS: 최초에는 카드 없이 문구만 노출. 검색 또는 IP 상황 선택 시에만 카드 표시
-  // design + video 위키 어셋 최초 1회만 로드 (탭 전환 시 캐시 사용, 즉시 표시)
-  getWikiAssets('design').then(function(assets){
+}
+function loadWikiOnce(tabParts){
+  if(!tabParts||!tabParts.length)return;
+  Promise.all([
+    getWikiPageData(currentPart),
+    Promise.all(tabParts.map(function(p){ return getWikiAssets(p); }))
+  ]).then(function(results){
+    var data=results[0];
+    var assetsList=results[1];
+    var assets=assetsList[0]||[];
     window.wikiAssets=assets||[];
     slidesByWorkType={};
     (assets||[]).forEach(function(a){ if(a.images&&a.images.length) slidesByWorkType[a.name]=a.images; });
-  });
-  getWikiAssets('video'); // VIDEO 탭 클릭 시 즉시 표시되도록 미리 로드
-  getWikiPageData(currentPart).then(function(data){
     var faqEl=document.getElementById('faqList');
-    if(!faqEl)return;
-    var list=data&&Array.isArray(data.faq)&&data.faq.length>0?data.faq:[];
-    if(list.length>0){
-      faqs=list;
-      faqEl.innerHTML=faqs.map(function(pair){ var q=String(typeof pair[0]!=='undefined'?pair[0]:'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); var a=String(typeof pair[1]!=='undefined'?pair[1]:'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); return '<div class="faq-item"><button class="faq-q tw" type="button"><span>'+q+'</span><span class="faq-icon">▼</span></button><div class="faq-a"><div class="faq-a-ct">'+a+'</div></div></div>'; }).join('');
-    }else{
-      faqEl.innerHTML=data&&data.configured?'<div class="faq-loading">위키 FAQ 페이지에 항목이 없거나 형식을 확인해 주세요. (GCD PLAYBOOK - FAQ)</div>':'<div class="faq-loading">위키 연동 시 FAQ가 표시됩니다. 실행방법.txt의 Confluence 설정을 확인해 주세요.</div>';
+    if(faqEl){
+      var list=data&&Array.isArray(data.faq)&&data.faq.length>0?data.faq:[];
+      if(list.length>0){
+        faqs=list;
+        faqEl.innerHTML=faqs.map(function(pair){ var q=String(typeof pair[0]!=='undefined'?pair[0]:'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); var a=String(typeof pair[1]!=='undefined'?pair[1]:'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); return '<div class="faq-item"><button class="faq-q tw" type="button"><span>'+q+'</span><span class="faq-icon">▼</span></button><div class="faq-a"><div class="faq-a-ct">'+a+'</div></div></div>'; }).join('');
+      }else{
+        faqEl.innerHTML=data&&data.configured?'<div class="faq-loading">위키 FAQ 페이지에 항목이 없거나 형식을 확인해 주세요. (GCD PLAYBOOK - FAQ)</div>':'<div class="faq-loading">위키 연동 시 FAQ가 표시됩니다. 실행방법.txt의 Confluence 설정을 확인해 주세요.</div>';
+      }
     }
   }).catch(function(){ var faqEl=document.getElementById('faqList'); if(faqEl) faqEl.innerHTML='<div class="faq-loading">FAQ를 불러오지 못했습니다. 서버 및 위키 설정을 확인해 주세요.</div>'; });
 }
@@ -158,8 +184,9 @@ function categoryIdFromName(catName){
 function buildWorkItemFromAsset(a){
   var w=parseWeeks(a.duration);
   var t=countSteps(a.steps);
+  var stepLabels=Array.isArray(a.stepLabels)&&a.stepLabels.length?a.stepLabels:parseStepLabels(a.steps||'');
   var nt=(Array.isArray(a.details)&&a.details.length)?a.details.map(function(d){ return '• '+d; }).join('\n'):'';
-  return { n:a.name, w:w!=null&&!isNaN(w)?w:2, wDisplay:(a.duration&&String(a.duration).trim())?String(a.duration).trim():'2주', t:t>0?t:2, nt:nt };
+  return { n:a.name, w:w!=null&&!isNaN(w)?w:2, wDisplay:(a.duration&&String(a.duration).trim())?String(a.duration).trim():'2주', t:t>0?t:2, nt:nt, stepLabels:stepLabels };
 }
 
 // 파트 전환 시 아래 카테고리 영역만 변경. 위 추천 카드(assetPanel)는 유지
@@ -171,24 +198,31 @@ function switchPart(partId,callback){
     cats=designCats.slice();
     wt=JSON.parse(JSON.stringify(designWt));
   }else{
-    cats=[{id:currentPart,nm:partDisplayName(currentPart),desc:'위키 기준 작업 유형'}];
+    cats=[{id:currentPart,nm:partDisplayName(currentPart),desc:'로딩 중...'}];
     wt={};
   }
   var catGrid=document.getElementById('catGrid');
   if(catGrid)catGrid.innerHTML=cats.map(function(c){ return '<div class="cat-item" data-c="'+c.id+'"><span class="cat-item-line"><strong class="tw">'+c.nm+'</strong> '+c.desc+'</span></div>'; }).join('');
+  var wtTitle=document.getElementById('wtTitle');
+  if(wtTitle)wtTitle.textContent='작업 유형을 선택해주세요';
+  var wtGrid=document.getElementById('wtGrid');
+  if(wtGrid)wtGrid.innerHTML='';
   document.getElementById('tlSec').style.display='none';
   var formSec=document.getElementById('formSec'); if(formSec)formSec.style.display='none';
-  selCat=null; selWork=null; selWeeks=null;
+  selCat=null; selWork=null; selWeeks=null; selSteps=null; selStepLabels=[];
   getWikiAssets(currentPart).then(function(assets){
-    window.wikiAssets=assets||[];
+    try{
+    assets=Array.isArray(assets)?assets:[];
+    var validAssets=assets.filter(function(a){ return a&&typeof a==='object'&&(a.name||a.n); });
+    window.wikiAssets=validAssets;
     slidesByWorkType={};
-    (assets||[]).forEach(function(a){ if(a.images&&a.images.length) slidesByWorkType[a.name]=a.images; });
+    validAssets.forEach(function(a){ if(a.images&&a.images.length) slidesByWorkType[a.name||a.n]=a.images; });
     if(currentPart!=='design'){
-      var withCategory=(assets||[]).filter(function(a){ return a.category&&String(a.category).trim(); });
+      var withCategory=validAssets.filter(function(a){ return a.category&&String(a.category).trim(); });
       if(withCategory.length>0){
         var order=[];
         var byCat={};
-        (assets||[]).forEach(function(a){
+        validAssets.forEach(function(a){
           var cat=String(a.category||'').trim();
           if(!cat){ cat='_none'; if(order.indexOf(cat)===-1)order.push(cat); }
           else if(order.indexOf(cat)===-1)order.push(cat);
@@ -206,11 +240,23 @@ function switchPart(partId,callback){
           wt[cid]=byCat[catName].map(buildWorkItemFromAsset);
         });
       }else{
-        wt[currentPart]=(assets||[]).map(buildWorkItemFromAsset);
+        wt[currentPart]=validAssets.map(buildWorkItemFromAsset);
+        var names=validAssets.map(function(a){ return a.name||a.n; }).filter(Boolean);
+        cats=[{id:currentPart,nm:partDisplayName(currentPart),desc:names.length>0?names.join(' / '):'위키에서 작업 유형을 불러옵니다'}];
       }
       if(catGrid)catGrid.innerHTML=cats.map(function(c){ return '<div class="cat-item" data-c="'+c.id+'"><span class="cat-item-line"><strong class="tw">'+c.nm+'</strong> '+c.desc+'</span></div>'; }).join('');
     }
-    // 탭 전환 시 추천 카드(assetPanel)는 변경하지 않음. 카테고리 영역만 갱신됨
+    // 카테고리가 1개면 자동 선택해 wtGrid에 소항목 표시 (Video 탭 등)
+    if(cats.length===1&&(wt[cats[0].id]||[]).length>0)selectCat(cats[0].id);
+    if(callback)callback();
+    }catch(e){
+    cats=[{id:currentPart,nm:partDisplayName(currentPart),desc:'위키 기준 작업 유형'}];
+    if(catGrid)catGrid.innerHTML=cats.map(function(c){ return '<div class="cat-item" data-c="'+c.id+'"><span class="cat-item-line"><strong class="tw">'+c.nm+'</strong> '+c.desc+'</span></div>'; }).join('');
+    if(callback)callback();
+  }
+  }).catch(function(){
+    cats=[{id:currentPart,nm:partDisplayName(currentPart),desc:'위키 기준 작업 유형'}];
+    if(catGrid)catGrid.innerHTML=cats.map(function(c){ return '<div class="cat-item" data-c="'+c.id+'"><span class="cat-item-line"><strong class="tw">'+c.nm+'</strong> '+c.desc+'</span></div>'; }).join('');
     if(callback)callback();
   });
 }
@@ -222,21 +268,27 @@ window.GCDPlaybookInit=runInit;
 let projectContext={projectName:'',workType:'',category:'',direction:'',background:'',purpose:'',requester:'',department:'',reference:'',spec:''};
 
 // ========== Vertex AI (서버 경유) + 위키 도메인 지식 ==========
-// 위키는 파트별 최초 1회만 불러오고, 이후에는 브라우저 메모리 캐시를 사용
+// 위키는 사이트 접속 최초 1회만 불러오고, 이후에는 브라우저 메모리 캐시 사용
 async function getWikiPageData(part){
   var p=part!=null?part:currentPart;
   var key=p||'design';
   if(wikiPageCache[key]) return wikiPageCache[key];
-  try{
-    const res=await fetch('/api/wiki?part='+encodeURIComponent(key));
-    if(!res.ok) return { content:'', faq:[], configured:false };
-    const data=await res.json();
-    wikiPageCache[key]=data||{ content:'', faq:[], configured:false };
-    wikiContextCache[key]=(data&&data.content!=null)?String(data.content).trim():'';
-    return wikiPageCache[key];
-  }catch(e){
-    return { content:'', faq:[], configured:false };
-  }
+  if(wikiPageLoadPromise[key]) return wikiPageLoadPromise[key];
+  wikiPageLoadPromise[key]= (async function(){
+    try{
+      const res=await fetch('/api/wiki?part='+encodeURIComponent(key));
+      if(!res.ok) return { content:'', faq:[], configured:false };
+      const data=await res.json();
+      wikiPageCache[key]=data||{ content:'', faq:[], configured:false };
+      wikiContextCache[key]=(data&&data.content!=null)?String(data.content).trim():'';
+      return wikiPageCache[key];
+    }catch(e){
+      return { content:'', faq:[], configured:false };
+    }finally{
+      delete wikiPageLoadPromise[key];
+    }
+  })();
+  return wikiPageLoadPromise[key];
 }
 
 // 위키 본문 컨텍스트는 파트별 최초 1회만 조회
@@ -250,19 +302,26 @@ async function getWikiContext(part){
   }catch(e){ return ''; }
 }
 
-// 01. ASSETS 카드는 선택 파트의 위키 어셋 (design / video 등) — 파트별 최초 1회만 조회
+// 01. ASSETS 카드는 선택 파트의 위키 어셋 (design / video 등) — 사이트 접속 최초 1회만 조회
 async function getWikiAssets(part){
   var p=part!=null?part:currentPart;
   var key=p||'design';
   if(Array.isArray(wikiAssetsCache[key])) return wikiAssetsCache[key];
-  try{
-    const res=await fetch('/api/wiki-assets?part='+encodeURIComponent(key));
-    if(!res.ok) return [];
-    const data=await res.json();
-    const assets=Array.isArray(data.assets)?data.assets:[];
-    wikiAssetsCache[key]=assets;
-    return assets;
-  }catch(e){ return []; }
+  if(wikiAssetsLoadPromise[key]) return wikiAssetsLoadPromise[key];
+  wikiAssetsLoadPromise[key]= (async function(){
+    try{
+      const res=await fetch('/api/wiki-assets?part='+encodeURIComponent(key));
+      if(!res.ok) return [];
+      const data=await res.json();
+      const assets=Array.isArray(data.assets)?data.assets:[];
+      wikiAssetsCache[key]=assets;
+      return assets;
+    }catch(e){ return []; }
+    finally{
+      delete wikiAssetsLoadPromise[key];
+    }
+  })();
+  return wikiAssetsLoadPromise[key];
 }
 
 async function callGemini(prompt,maxTokens=500,opts){
@@ -1161,22 +1220,46 @@ function parseWeeks(str){
   if(m) return m[3]?parseInt(m[3],10):(m[2]?parseInt(m[2],10):parseInt(m[1],10));
   return null;
 }
+/** 행 구분(줄바꿈) 기반 단계 라벨 추출. "R1 - WIP\nR2 - Near Final\n완료 - Delivery" → ["R1 - WIP","R2 - Near Final","완료 - Delivery"] */
+function parseStepLabels(str){
+  if(!str||typeof str!=='string')return [];
+  var lines=str.split(/\n/).map(function(x){ return x.trim(); }).filter(function(x){ return x.length>0&&x.length<120; });
+  var stepLike=/R\d+|R-?\s*\d+|완료|WIP|Delivery|Near\s*Final|FIN/i;
+  var out=lines.filter(function(line){ return stepLike.test(line); });
+  return out.length>=2?out:[];
+}
 function countSteps(str){
   if(!str||typeof str!=='string')return 0;
-  var parts=str.split(/[,;]/).map(function(s){ return s.trim(); }).filter(Boolean);
-  if(parts.length>0) return parts.length;
-  var rCount=(str.match(/R\s*\d+/gi)||[]).length;
-  return rCount>0?rCount+1:0;
+  var s=str.trim();
+  var m=s.match(/(\d+)\s*(?:단계|steps?|stages?)/i);
+  if(m) return Math.min(parseInt(m[1],10),8);
+  if(/^\d+$/.test(s)) return Math.min(parseInt(s,10),8);  // 위키에 "3" 또는 "3단계"만 있는 경우
+  // 행 구분 우선: R1 - WIP\nR2 - Near Final\n완료 - Delivery
+  var labels=parseStepLabels(s);
+  if(labels.length>=2) return Math.min(labels.length,8);
+  // R-1, R-2, FIN — 쉼표·줄바꿈·세미콜론 구분
+  var parts=s.split(/[\n,;，；]+/).map(function(x){ return x.trim(); }).filter(Boolean);
+  var hasStepPattern=/R-?\s*\d+|R\d+|FIN|완료/i.test(s);
+  if(parts.length>1&&hasStepPattern) return Math.min(parts.length,8);
+  // R1, R-1, R2 등 (하이픈 포함)
+  var rCount=(str.match(/R-?\s*\d+/gi)||[]).length;
+  if(rCount>0) return Math.min(Math.max(rCount+1,parts.length||0),8);
+  // 불릿·번호 목록: R-1/FIN 등 단계 패턴 있을 때만 (세부 유의사항 번호 목록과 구분)
+  var listLines=s.split(/\n/).map(function(x){ return x.trim(); }).filter(function(x){ return /^[•\-]\s/.test(x)||/^\d+\.\s/.test(x); });
+  if(listLines.length>=2&&hasStepPattern) return Math.min(listLines.length,8);
+  if(parts.length===1) return 1;
+  return 0;
 }
 function getMergedWorkItem(t){
   var meta=findWikiMetaForWorkType(t.n);
-  if(!meta) return { n:t.n, w:t.w, wDisplay:t.w+'주', t:t.t, nt:t.nt };
+  if(!meta) return { n:t.n, w:t.w, wDisplay:t.w+'주', t:t.t, nt:t.nt, stepLabels:[] };
   var w=parseWeeks(meta.duration);
   var stepNum=countSteps(meta.steps);
+  var stepLabels=Array.isArray(meta.stepLabels)&&meta.stepLabels.length?meta.stepLabels:parseStepLabels(meta.steps||'');
   var nt=t.nt;
   if(meta.details&&meta.details.length) nt=meta.details.map(function(d){ return '• '+d; }).join('\n');
   var wDisplay=(meta.duration&&String(meta.duration).trim())?String(meta.duration).trim():((w!=null&&!isNaN(w))?w+'주':t.w+'주');
-  return { n:t.n, w:(w!=null&&!isNaN(w))?w:t.w, wDisplay:wDisplay, t:stepNum>0?stepNum:t.t, nt:nt||t.nt };
+  return { n:t.n, w:(w!=null&&!isNaN(w))?w:t.w, wDisplay:wDisplay, t:stepNum>0?stepNum:t.t, nt:nt||t.nt, stepLabels:stepLabels };
 }
 // Category — 카테고리 선택 시 위키 어셋을 먼저 불러와 기간/단계/유의사항을 위키 값으로 표시
 async function selectCat(cid,work){
@@ -1189,7 +1272,7 @@ async function selectCat(cid,work){
   }catch(e){ window.wikiAssets=window.wikiAssets||[]; }
   (assets||[]).forEach(function(a){ if(a.images&&a.images.length) slidesByWorkType[a.name]=a.images; });
   var list=(wt[cid]||[]).map(getMergedWorkItem);
-  $('wtGrid').innerHTML=list.map(t=>`<div class="cat-item" data-w="${t.n}" data-wk="${t.w}" data-wk-display="${(t.wDisplay||t.w+'주').replace(/"/g,'&quot;')}" data-steps="${t.t}" data-nt="${encodeURIComponent(t.nt)}"><strong class="tw">${t.n}</strong></div>`).join('');
+  $('wtGrid').innerHTML=list.map(t=>`<div class="cat-item" data-w="${t.n}" data-wk="${t.w}" data-wk-display="${(t.wDisplay||t.w+'주').replace(/"/g,'&quot;')}" data-steps="${t.t}" data-step-labels="${encodeURIComponent(JSON.stringify(t.stepLabels||[]))}" data-nt="${encodeURIComponent(t.nt)}"><strong>${t.n}</strong></div>`).join('');
   $('tlSec').style.display='none';
   if(work)setTimeout(()=>{const el=[...$('wtGrid').children].find(e=>e.dataset.w.includes(work.split('/')[0]));if(el)selectWork(el);},50);
 }
@@ -1210,6 +1293,8 @@ function selectWork(el){
   el.classList.add('sel');
   selWork=el.dataset.w;
   selWeeks=+el.dataset.wk;
+  selSteps=el.dataset.steps?parseInt(el.dataset.steps,10):null;
+  try{ selStepLabels=JSON.parse(decodeURIComponent(el.dataset.stepLabels||'[]')); }catch(_){ selStepLabels=[]; }
   $('selCat').textContent=cats.find(c=>c.id===selCat).nm;
   $('selWt').textContent=selWork;
   var wkDisplay=el.getAttribute('data-wk-display');
