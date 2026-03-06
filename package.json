@@ -4,8 +4,8 @@
   "type": "module",
   "description": "GCD Playbook - 개인 Gemini API 연동",
   "scripts": {
-    "start": "vercel dev",
-    "dev": "vercel dev"
+    "start": "true",
+    "dev": "true"
   },
   "dependencies": {
     "dotenv": "^16.3.1",

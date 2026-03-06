@@ -17,11 +17,12 @@
       <div class="chat" id="chat">
         <div class="search-row">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <span class="search-cursor" aria-hidden="true"></span>
           <input id="sInput" placeholder="예: PUBG 9주년 키아트를 3월 15일까지 만들고 싶어요" autocomplete="off">
           <button class="search-btn" id="sBtn">AI 검색</button>
         </div>
         <div class="chat-msgs" id="msgs"></div>
-        <div class="chat-input"><input id="cInput" placeholder="추가 질문을 입력하세요..."><button id="cBtn">↑</button></div>
+        <div class="chat-input"><input id="cInput" placeholder="추가 질문을 입력하세요..."><button id="cBtn" type="button" aria-label="전송"><svg class="send-arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg></button></div>
       </div>
       <div class="ip-btns" id="ipBtns">
         <span class="ip-label tw">IP 상황</span>
@@ -32,27 +33,36 @@
       </div>
       <div class="desc"><p>GCD Design Creative Part는 크래프톤의 브랜드 가치를 시각화하고,</p><p>글로벌 팬들과 소통하는 최전선의 크리에이티브를 담당합니다.</p></div>
     </div>
-    <div class="footer">© 2026 GCD Graphic Design Team. ALL RIGHTS RESERVED.</div>
+    <div class="footer">© 2026 GLOBAL CREATIVE DIV. ALL RIGHTS RESERVED.</div>
   </div>
   <div class="right">
-    <div class="part-tabs-wrap" id="partTabsWrap" style="display:none">
-      <span class="part-tabs-label tw">PLAYBOOK</span>
-      <div class="part-tabs" id="partTabs"></div>
-    </div>
     <section id="assetPanel">
-      <h3 class="sec-title tw" id="assetPanelTitle" style="margin-top:0">01. DESIGN ASSETS</h3>
+      <div class="asset-panel-header">
+        <h3 class="sec-title tw" id="assetPanelTitle" style="margin-top:0">01. DESIGN ASSETS</h3>
+        <span class="asset-panel-desc">질문을 바탕으로 추천된 어셋을 확인하세요.</span>
+      </div>
       <div class="asset-list" id="assetList">
-        <div class="asset-empty" id="assetEmpty">왼쪽에서 검색하거나 IP 상황을 선택하면 필요한 어셋을 추천해 드립니다.</div>
+        <div class="asset-empty" id="assetEmpty"><span class="asset-loading-text">AI가 생각 중...</span></div>
       </div>
     </section>
-    <section id="catSec" style="margin-top:60px"><h3 class="sec-title tw" style="margin-top:0">02. REQUEST CATEGORY</h3><div class="cat-sec"><div class="cat-title tw">작업 카테고리를 선택해주세요</div><div class="cat-grid" id="catGrid"></div></div></section>
-    <section id="wtSec" style="display:none;margin-top:60px"><h3 class="sec-title tw" style="margin-top:0">03. WORK TYPE</h3><div class="cat-sec"><div class="cat-title tw" id="wtTitle">작업 선택</div><div style="color:#666;margin-bottom:25px">원하시는 작업 유형을 선택해주세요</div><div class="cat-grid" id="wtGrid"></div></div></section>
-    <section id="tlSec" style="display:none;margin-top:60px"><h3 class="sec-title tw" style="margin-top:0">04. PROJECT TIMELINE</h3><div class="cat-sec"><div class="tl-display"><div><div class="tl-cat" id="selCat">Branding</div><div class="tl-type tw" id="selWt">작업 유형</div></div><div class="preview" id="preview"><button class="sl-arr l" id="slPrev">‹</button><button class="sl-arr r" id="slNext">›</button><div class="sl-dots" id="dots"></div></div></div><div class="modal" id="modal"><button class="modal-close" id="modalClose">✕</button><img id="modalImg"><video id="modalVideo" controls playsinline style="display:none;max-width:100%;max-height:80vh"></video></div><div class="info-box"><h4>예상 소요 기간</h4><p id="estTime">작업 유형을 선택하세요</p></div><div class="info-box"><h4>단계</h4><p id="estSteps">-</p></div><div class="info-box"><h4>세부 유의 사항</h4><div id="notice"><p>작업 유형을 선택하시면 해당 작업의 주의사항이 표시됩니다.</p></div></div><div class="dl-row"><div class="dl-input"><label>요청일 선택 *</label><input type="date" id="reqDate"></div><div class="dl-input"><label>마감일 선택 *</label><input type="date" id="dlDate"></div></div><div class="tl-visual" id="tlVisual"></div></div></section>
-    <section id="formSec" style="display:none;margin-top:60px"><h3 class="sec-title tw" style="margin-top:0">05. PROJECT DETAILS</h3><div class="form-sec"><input class="form-title" id="projTitle" placeholder="프로젝트 제목" value="Project Title"><div class="form-grid"><div class="form-row"><div class="form-label req">요청일</div><input class="form-input" id="fReqDate" readonly></div><div class="form-row"><div class="form-label req">요청자</div><input class="form-input" id="fName" placeholder="요청자 이름"></div><div class="form-row"><div class="form-label req">부서/팀</div><input class="form-input" id="fDept" placeholder="부서/팀"></div><div class="form-row"><div class="form-label req">요청 업무</div><input class="form-input" id="fWork"></div><div class="form-row"><div class="form-label req">희망 전달일</div><input class="form-input" id="fDl" readonly></div><div class="form-row"><div class="form-label req">배경</div><textarea class="form-input" id="fBg" placeholder="프로젝트 배경"></textarea></div><div class="form-row"><div class="form-label req">목적</div><textarea class="form-input" id="fPurpose" placeholder="프로젝트 목적"></textarea></div><div class="form-row"><div class="form-label">디렉션</div><textarea class="form-input" id="fDir" placeholder="디렉션"></textarea></div><div class="form-row"><div class="form-label">레퍼런스</div><textarea class="form-input" id="fRef" placeholder="참고 자료 URL 또는 설명"></textarea></div><div class="form-row"><div class="form-label req">딜리버리 스펙</div><textarea class="form-input" id="fSpec" placeholder="예: 1920x1080, PNG"></textarea></div></div><button class="submit-btn" id="submitBtn">요청서 복사</button></div></section>
-    <section id="wfSec" style="margin-top:60px"><h3 class="sec-title tw" style="margin-top:0">📋 WORKFLOW STEPS</h3><div class="wf-grid"><div class="wf-step"><span class="step-num">STEP 01</span><strong class="step-title tw">요청서 작성</strong><ul class="step-desc"><li>카테고리 선택</li><li>작업 유형 선택</li><li>필수 정보 입력</li></ul></div><div class="wf-step"><span class="step-num">STEP 02</span><strong class="step-title tw">디자인 초안</strong><ul class="step-desc"><li>컨셉 제시</li><li>초기 방향성 확인</li><li>피드백 수렴</li></ul></div><div class="wf-step"><span class="step-num">STEP 03</span><strong class="step-title tw">수정 및 보완</strong><ul class="step-desc"><li>디테일 작업</li><li>수정사항 반영</li><li>최종 검토</li></ul></div><div class="wf-step"><span class="step-num">STEP 04</span><strong class="step-title tw">최종 완료</strong><ul class="step-desc"><li>최종안 승인</li><li>파일 전달</li><li>프로젝트 종료</li></ul></div></div></section>
-    <section style="margin-top:60px"><h3 class="sec-title tw" style="margin-top:0">📍 FAQ</h3><div id="faqList"></div></section>
-    <footer style="margin-top:80px;padding:30px 0;border-top:1px solid #ddd;text-align:center;color:#666">© 2026 GCD Graphic Design Team.</footer>
+    <section id="catSec" class="request-category-section">
+      <div class="cat-tabs-panel">
+        <div class="cat-sec-header">
+          <div class="part-tabs-wrap" id="partTabsWrap" style="display:none">
+            <div class="part-tabs" id="partTabs"></div>
+          </div>
+          <p class="cat-sec-intro">필요한 어셋을 직접 선택할 수도 있습니다.</p>
+        </div>
+        <div class="cat-wt-row"><div class="cat-col"><div class="cat-grid" id="catGrid"></div></div><div class="wt-col" id="wtSec"><div class="cat-title tw" id="wtTitle" aria-hidden="true">작업 선택</div><div class="wt-subtitle" aria-hidden="true">원하시는 작업 유형을 선택해주세요</div><div class="cat-grid" id="wtGrid"></div></div></div>
+      </div>
+    </section>
+    <section id="tlSec" style="display:none;margin-top:80px"><h3 class="sec-title tw" style="margin-top:0">02. PROJECT TIMELINE</h3><div class="cat-sec"><div class="tl-display"><div class="tl-left"><div class="tl-header"><div class="tl-cat" id="selCat">Branding</div><div class="tl-type tw" id="selWt">작업 유형</div></div><div class="tl-info-row"><div class="tl-info-item"><h4>예상 소요 기간</h4><p id="estTime">작업 유형을 선택하세요</p></div><div class="tl-info-item"><h4>단계</h4><p id="estSteps">-</p></div></div><div class="tl-notice"><h4>세부 유의 사항</h4><div id="notice"><p>작업 유형을 선택하시면 해당 작업의 주의사항이 표시됩니다.</p></div></div></div><div class="preview" id="preview"><button class="sl-arr l" id="slPrev">‹</button><button class="sl-arr r" id="slNext">›</button><div class="sl-dots" id="dots"></div></div></div><div class="modal" id="modal"><button class="modal-close" id="modalClose">✕</button><img id="modalImg"><video id="modalVideo" controls playsinline style="display:none;max-width:100%;max-height:80vh"></video></div><div class="dl-row"><div class="dl-input"><label>요청일 선택 *</label><input type="date" id="reqDate"></div><div class="dl-input"><label>마감일 선택 *</label><input type="date" id="dlDate"></div></div><div class="tl-visual" id="tlVisual"></div></div></section>
+    <section id="formSec" style="display:none;margin-top:80px"><h3 class="sec-title tw" style="margin-top:0">03. PROJECT DETAILS</h3><div class="form-sec"><input class="form-title" id="projTitle" placeholder="프로젝트 제목" value="Project Title"><div class="form-grid"><div class="form-row"><div class="form-label req">요청일</div><input class="form-input" id="fReqDate" readonly></div><div class="form-row"><div class="form-label req">요청자</div><input class="form-input" id="fName" placeholder="요청자 이름"></div><div class="form-row"><div class="form-label req">부서/팀</div><input class="form-input" id="fDept" placeholder="부서/팀"></div><div class="form-row"><div class="form-label req">요청 업무</div><input class="form-input" id="fWork"></div><div class="form-row"><div class="form-label req">희망 전달일</div><input class="form-input" id="fDl" readonly></div><div class="form-row"><div class="form-label req">배경</div><textarea class="form-input" id="fBg" placeholder="프로젝트 배경"></textarea></div><div class="form-row"><div class="form-label req">목적</div><textarea class="form-input" id="fPurpose" placeholder="프로젝트 목적"></textarea></div><div class="form-row"><div class="form-label">디렉션</div><textarea class="form-input" id="fDir" placeholder="디렉션"></textarea></div><div class="form-row"><div class="form-label">레퍼런스</div><textarea class="form-input" id="fRef" placeholder="참고 자료 URL 또는 설명"></textarea></div><div class="form-row"><div class="form-label req">딜리버리 스펙</div><textarea class="form-input" id="fSpec" placeholder="예: 1920x1080, PNG"></textarea></div></div><button class="submit-btn" id="submitBtn">요청서 복사</button></div></section>
+    <section id="wfSec" style="margin-top:80px"><h3 class="sec-title tw" style="margin-top:0">📋 WORKFLOW STEPS</h3><div class="wf-grid"><div class="wf-step"><span class="step-num">STEP 01</span><strong class="step-title tw">요청서 작성</strong><ul class="step-desc"><li>카테고리 선택 (Design/Video)</li><li>작업 유형 선택</li><li>필수 정보 입력</li></ul></div><div class="wf-step"><span class="step-num">STEP 02</span><strong class="step-title tw">크리에이티브 초안</strong><ul class="step-desc"><li>컨셉·스토리보드 제시</li><li>초기 방향성 확인</li><li>피드백 수렴</li></ul></div><div class="wf-step"><span class="step-num">STEP 03</span><strong class="step-title tw">수정 및 보완</strong><ul class="step-desc"><li>세부 작업 (디자인/영상)</li><li>수정사항 반영</li><li>최종 검토</li></ul></div><div class="wf-step"><span class="step-num">STEP 04</span><strong class="step-title tw">최종 완료</strong><ul class="step-desc"><li>최종안 승인</li><li>파일 전달</li><li>프로젝트 종료</li></ul></div></div></section>
+    <section style="margin-top:80px"><h3 class="sec-title tw" style="margin-top:0">📍 FAQ</h3><div id="faqList"></div></section>
+    <footer style="margin-top:80px;padding:30px 0;border-top:1px solid #ddd;text-align:center;color:#666">© 2026 GLOBAL CREATIVE DIV. ALL RIGHTS RESERVED.</footer>
   </div>
+  <div class="split-diamond" aria-hidden="true"></div>
 </div>
 <script src="script.js"></script>
 <script>if(window.GCDPlaybookInit)window.GCDPlaybookInit();</script>

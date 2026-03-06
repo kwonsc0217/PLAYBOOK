@@ -24,12 +24,29 @@ function updateAssetPanelTitle(){
   else el.textContent='01. '+partDisplayName(currentPart).toUpperCase()+' ASSETS';
 }
 
+function goHome(){
+  document.body.classList.remove('split-expanded');
+  document.querySelectorAll('.ip-btn').forEach(b=>b.classList.remove('sel'));
+  var chat=document.getElementById('chat');
+  if(chat)chat.classList.remove('show');
+  chatExpanded=false;
+  var msgs=document.getElementById('msgs');
+  if(msgs)msgs.innerHTML='';
+  creativeAssetsMode=false;
+  updateAssetPanelTitle();
+  var list=document.getElementById('assetList');
+  if(list){
+    list.classList.remove('asset-grid');
+    list.innerHTML='<div class="asset-empty" id="assetEmpty"><span class="asset-loading-text">AI가 생각 중...</span></div>';
+  }
+}
+
 // Init + 이벤트 바인딩 — DOM 준비 후 한 번에 실행 (스크립트 오류 방지)
 function initDOM(){
   const catGrid=document.getElementById('catGrid');
   const faqList=document.getElementById('faqList');
   const dotsEl=document.getElementById('dots');
-  if(catGrid)catGrid.innerHTML=cats.map(c=>`<div class="cat-item" data-c="${c.id}"><strong class="tw">${c.nm}</strong><span>${c.desc}</span></div>`).join('');
+  if(catGrid)catGrid.innerHTML=cats.map(c=>`<div class="cat-item" data-c="${c.id}"><span class="cat-item-line"><strong class="tw">${c.nm}</strong> ${c.desc}</span></div>`).join('');
   if(faqList)faqList.innerHTML='<div class="faq-loading" id="faqLoading">위키에서 FAQ를 불러오는 중…</div>';
   if(dotsEl)dotsEl.innerHTML=slides.map((_,i)=>`<span class="sl-dot${i===0?' on':''}" data-i="${i}"></span>`).join('');
   bindEvents();
@@ -44,7 +61,9 @@ function bindEvents(){
   if(cBtn)cBtn.onclick=()=>sendChat();
   if(sInput)sInput.onkeypress=e=>{if(e.key==='Enter')sendChat();};
   if(cInput)cInput.onkeypress=e=>{if(e.key==='Enter')sendChat();};
-  if(ipBtns)ipBtns.onclick=e=>{const btn=e.target.closest('.ip-btn');if(btn&&btn.dataset.query)sendChat(btn.dataset.query);};
+  if(ipBtns)ipBtns.onclick=e=>{const btn=e.target.closest('.ip-btn');if(btn&&btn.dataset.query){document.querySelectorAll('.ip-btn').forEach(b=>b.classList.remove('sel'));btn.classList.add('sel');sendChat(btn.dataset.query);}};
+  const logoEl=document.querySelector('.logo');
+  if(logoEl)logoEl.onclick=goHome;
   const catGridEl=document.getElementById('catGrid');
   if(catGridEl)catGridEl.onclick=e=>{const el=e.target.closest('.cat-item');if(el)selectCat(el.dataset.c);};
   const wtGridEl=document.getElementById('wtGrid');
@@ -89,22 +108,35 @@ function runInit(){
   // 파트 목록 및 탭 (Design | Video 등)
   fetch('/api/parts').then(function(r){ return r.json(); }).then(function(data){
     partIds=Array.isArray(data.parts)?data.parts:[];
-    if(partIds.length>1){
-      var wrap=document.getElementById('partTabsWrap');
-      var tabEl=document.getElementById('partTabs');
-      if(wrap)wrap.style.display='flex';
-      if(tabEl){
-        tabEl.innerHTML=partIds.map(function(p){ return '<button type="button" class="part-tab'+(p===currentPart?' active':'')+'" data-part="'+p+'">'+partDisplayName(p)+'</button>'; }).join('');
-        tabEl.onclick=function(e){ var btn=e.target.closest('.part-tab'); if(btn&&btn.dataset.part)switchPart(btn.dataset.part); };
-      }
+    var tabParts=partIds.length>1?partIds:['design','video'];
+    var wrap=document.getElementById('partTabsWrap');
+    var tabEl=document.getElementById('partTabs');
+    if(wrap)wrap.style.display='flex';
+    if(tabEl){
+      tabEl.innerHTML=tabParts.map(function(p){ return '<button type="button" class="part-tab'+(p===currentPart?' active':'')+'" data-part="'+p+'">'+partDisplayName(p)+'</button>'; }).join('');
+      tabEl.onclick=function(e){ var btn=e.target.closest('.part-tab'); if(btn&&btn.dataset.part)switchPart(btn.dataset.part); };
     }
-  }).catch(function(){});
+    // 모든 파트 위키 어셋 최초 1회 미리 로드 (탭 전환 시 즉시 표시)
+    tabParts.forEach(function(p){ getWikiAssets(p); });
+  }).catch(function(){
+    partIds=['design','video'];
+    var wrap=document.getElementById('partTabsWrap');
+    var tabEl=document.getElementById('partTabs');
+    if(wrap)wrap.style.display='flex';
+    if(tabEl){
+      tabEl.innerHTML=['design','video'].map(function(p){ return '<button type="button" class="part-tab'+(p===currentPart?' active':'')+'" data-part="'+p+'">'+partDisplayName(p)+'</button>'; }).join('');
+      tabEl.onclick=function(e){ var btn=e.target.closest('.part-tab'); if(btn&&btn.dataset.part)switchPart(btn.dataset.part); };
+    }
+    ['design','video'].forEach(function(p){ getWikiAssets(p); });
+  });
   // 01. ASSETS: 최초에는 카드 없이 문구만 노출. 검색 또는 IP 상황 선택 시에만 카드 표시
-  getWikiAssets().then(function(assets){
+  // design + video 위키 어셋 최초 1회만 로드 (탭 전환 시 캐시 사용, 즉시 표시)
+  getWikiAssets('design').then(function(assets){
     window.wikiAssets=assets||[];
     slidesByWorkType={};
     (assets||[]).forEach(function(a){ if(a.images&&a.images.length) slidesByWorkType[a.name]=a.images; });
   });
+  getWikiAssets('video'); // VIDEO 탭 클릭 시 즉시 표시되도록 미리 로드
   getWikiPageData(currentPart).then(function(data){
     var faqEl=document.getElementById('faqList');
     if(!faqEl)return;
@@ -130,13 +162,11 @@ function buildWorkItemFromAsset(a){
   return { n:a.name, w:w!=null&&!isNaN(w)?w:2, wDisplay:(a.duration&&String(a.duration).trim())?String(a.duration).trim():'2주', t:t>0?t:2, nt:nt };
 }
 
-// 파트 전환 시 해당 파트 위키 기반으로 카테고리·작업 유형·어셋 갱신. 완료 후 callback 호출
+// 파트 전환 시 아래 카테고리 영역만 변경. 위 추천 카드(assetPanel)는 유지
 function switchPart(partId,callback){
   if(partId===currentPart){ if(callback)callback(); return; }
   currentPart=partId||'design';
-  creativeAssetsMode=false;
   document.querySelectorAll('.part-tab').forEach(function(el){ el.classList.toggle('active',el.dataset.part===currentPart); });
-  updateAssetPanelTitle();
   if(currentPart==='design'){
     cats=designCats.slice();
     wt=JSON.parse(JSON.stringify(designWt));
@@ -145,8 +175,7 @@ function switchPart(partId,callback){
     wt={};
   }
   var catGrid=document.getElementById('catGrid');
-  if(catGrid)catGrid.innerHTML=cats.map(function(c){ return '<div class="cat-item" data-c="'+c.id+'"><strong class="tw">'+c.nm+'</strong><span>'+c.desc+'</span></div>'; }).join('');
-  document.getElementById('wtSec').style.display='none';
+  if(catGrid)catGrid.innerHTML=cats.map(function(c){ return '<div class="cat-item" data-c="'+c.id+'"><span class="cat-item-line"><strong class="tw">'+c.nm+'</strong> '+c.desc+'</span></div>'; }).join('');
   document.getElementById('tlSec').style.display='none';
   var formSec=document.getElementById('formSec'); if(formSec)formSec.style.display='none';
   selCat=null; selWork=null; selWeeks=null;
@@ -179,11 +208,9 @@ function switchPart(partId,callback){
       }else{
         wt[currentPart]=(assets||[]).map(buildWorkItemFromAsset);
       }
-      if(catGrid)catGrid.innerHTML=cats.map(function(c){ return '<div class="cat-item" data-c="'+c.id+'"><strong class="tw">'+c.nm+'</strong><span>'+c.desc+'</span></div>'; }).join('');
+      if(catGrid)catGrid.innerHTML=cats.map(function(c){ return '<div class="cat-item" data-c="'+c.id+'"><span class="cat-item-line"><strong class="tw">'+c.nm+'</strong> '+c.desc+'</span></div>'; }).join('');
     }
-    var toShow=currentPart==='design'?filterByAllowedAssets(assets):(assets||[]);
-    if(toShow.length)toShow=mergeWithWikiData(toShow,assets);
-    renderAssetPanel(toShow.length?toShow:[]);
+    // 탭 전환 시 추천 카드(assetPanel)는 변경하지 않음. 카테고리 영역만 갱신됨
     if(callback)callback();
   });
 }
@@ -1037,6 +1064,7 @@ function getFieldLabel(field){
 let chatExpanded=false;
 
 async function sendChat(text){
+  document.body.classList.add('split-expanded');
   var sInput=document.getElementById('sInput'), cInput=document.getElementById('cInput');
   var v=typeof text==='string'?text:((sInput&&sInput.value)||(cInput&&cInput.value)||'').trim();
   if(!v)return;
@@ -1100,17 +1128,17 @@ async function sendChat(text){
     getWikiAssets().then(function(assets){ var a=currentPart==='design'?filterByAllowedAssets(assets):(assets||[]); if(a.length)a=mergeWithWikiData(a,assets); renderAssetPanel(a); });
   }
 
-  // IP 상황 클릭 시에는 카드만 노출, 05. PROJECT DETAILS 자동 입력 안 함
+  // IP 상황 클릭 시에는 카드만 노출, 03. PROJECT DETAILS 자동 입력 안 함
   if(isIpSituation){ pendingData=null; return; }
 
-  // 사용자 입력을 파싱해 05. PROJECT DETAILS에 다듬어서 자동 입력
+  // 사용자 입력을 파싱해 03. PROJECT DETAILS에 다듬어서 자동 입력
   try{
     const parsed=await parseWithAI(v);
     var hasFormData=parsed&&(parsed.projectName||parsed.category||parsed.workType||parsed.requester||parsed.department||parsed.background||parsed.purpose||parsed.direction||parsed.deadline||parsed.reference||parsed.spec);
     var shouldAutoFill=parsed&&(parsed.intent==='request'||parsed.intent==='question')&&hasFormData;
     if(shouldAutoFill){
       await autoFillForm(parsed,false);
-      addMsg('입력하신 내용을 <b>05. PROJECT DETAILS</b>에 반영해 두었어요. 확인 후 수정·보완해 주세요.',false);
+      addMsg('입력하신 내용을 <b>03. PROJECT DETAILS</b>에 반영해 두었어요. 확인 후 수정·보완해 주세요.',false);
       pendingData=null;
     }else if(parsed&&parsed.intent==='request'&&(parsed.category||parsed.workType||parsed.projectName)){
       pendingData=parsed;
@@ -1154,7 +1182,6 @@ function getMergedWorkItem(t){
 async function selectCat(cid,work){
   document.querySelectorAll('.cat-item').forEach(el=>el.classList.toggle('sel',el.dataset.c===cid));
   selCat=cid;
-  $('wtSec').style.display='block';
   $('wtTitle').textContent=cats.find(c=>c.id===cid).nm+' 작업 선택';
   try{
     var assets=await getWikiAssets();
@@ -1162,10 +1189,9 @@ async function selectCat(cid,work){
   }catch(e){ window.wikiAssets=window.wikiAssets||[]; }
   (assets||[]).forEach(function(a){ if(a.images&&a.images.length) slidesByWorkType[a.name]=a.images; });
   var list=(wt[cid]||[]).map(getMergedWorkItem);
-  $('wtGrid').innerHTML=list.map(t=>`<div class="cat-item" data-w="${t.n}" data-wk="${t.w}" data-wk-display="${(t.wDisplay||t.w+'주').replace(/"/g,'&quot;')}" data-steps="${t.t}" data-nt="${encodeURIComponent(t.nt)}"><strong class="tw">${t.n}</strong><div class="wt-meta"><span>⏱️ ${t.wDisplay||t.w+'주'}</span><span>📋 ${t.t}단계</span></div></div>`).join('');
+  $('wtGrid').innerHTML=list.map(t=>`<div class="cat-item" data-w="${t.n}" data-wk="${t.w}" data-wk-display="${(t.wDisplay||t.w+'주').replace(/"/g,'&quot;')}" data-steps="${t.t}" data-nt="${encodeURIComponent(t.nt)}"><strong class="tw">${t.n}</strong></div>`).join('');
   $('tlSec').style.display='none';
   if(work)setTimeout(()=>{const el=[...$('wtGrid').children].find(e=>e.dataset.w.includes(work.split('/')[0]));if(el)selectWork(el);},50);
-  else $('wtSec').scrollIntoView({behavior:'smooth'});
 }
 
 // 위키 어셋명(wikiName)과 화면 작업 유형(selWork) 매칭 — 왼쪽(03. WORK TYPE)에 위키 기간·단계·이미지 반영

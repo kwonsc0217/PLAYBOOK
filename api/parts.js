@@ -12,9 +12,7 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
-  }
-  try {
-    const parts = getPartIds();
+  }v
     res.status(200).json({ parts });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Internal error' });
