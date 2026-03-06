@@ -6,6 +6,9 @@ var wt=JSON.parse(JSON.stringify(designWt));
 var cats=designCats.slice();
 var partIds=[];  // 서버 /api/parts 에서 채움 (design, video, ...)
 var currentPart='design';
+var wikiPageCache={};
+var wikiContextCache={};
+var wikiAssetsCache={};
 var defaultSlides=[]; // 위키 이미지만 사용 (imgur 미사용)
 var slides=defaultSlides.slice();
 var slidesByWorkType={};
@@ -102,7 +105,7 @@ function runInit(){
     slidesByWorkType={};
     (assets||[]).forEach(function(a){ if(a.images&&a.images.length) slidesByWorkType[a.name]=a.images; });
   });
-  fetch('/api/wiki?part='+encodeURIComponent(currentPart)+'&t='+Date.now()).then(function(r){ return r.json(); }).then(function(data){
+  getWikiPageData(currentPart).then(function(data){
     var faqEl=document.getElementById('faqList');
     if(!faqEl)return;
     var list=data&&Array.isArray(data.faq)&&data.faq.length>0?data.faq:[];
@@ -192,24 +195,46 @@ window.GCDPlaybookInit=runInit;
 let projectContext={projectName:'',workType:'',category:'',direction:'',background:'',purpose:'',requester:'',department:'',reference:'',spec:''};
 
 // ========== Vertex AI (서버 경유) + 위키 도메인 지식 ==========
-// 위키: 서버에 Confluence 설정 시 /api/wiki에서 조회 (파트별). 위키 수정 시 캐시 TTL 후 반영
-async function getWikiContext(){
+// 위키는 파트별 최초 1회만 불러오고, 이후에는 브라우저 메모리 캐시를 사용
+async function getWikiPageData(part){
+  var p=part!=null?part:currentPart;
+  var key=p||'design';
+  if(wikiPageCache[key]) return wikiPageCache[key];
   try{
-    const res=await fetch('/api/wiki?part='+encodeURIComponent(currentPart||'design'));
-    if(!res.ok)return '';
+    const res=await fetch('/api/wiki?part='+encodeURIComponent(key));
+    if(!res.ok) return { content:'', faq:[], configured:false };
     const data=await res.json();
+    wikiPageCache[key]=data||{ content:'', faq:[], configured:false };
+    wikiContextCache[key]=(data&&data.content!=null)?String(data.content).trim():'';
+    return wikiPageCache[key];
+  }catch(e){
+    return { content:'', faq:[], configured:false };
+  }
+}
+
+// 위키 본문 컨텍스트는 파트별 최초 1회만 조회
+async function getWikiContext(part){
+  var p=part!=null?part:currentPart;
+  var key=p||'design';
+  if(typeof wikiContextCache[key]==='string'&&wikiContextCache[key]!==undefined) return wikiContextCache[key];
+  try{
+    const data=await getWikiPageData(key);
     return (data.content!=null)?String(data.content).trim():'';
   }catch(e){ return ''; }
 }
 
-// 01. ASSETS 카드는 선택 파트의 위키 어셋 (design / video 등)
+// 01. ASSETS 카드는 선택 파트의 위키 어셋 (design / video 등) — 파트별 최초 1회만 조회
 async function getWikiAssets(part){
   var p=part!=null?part:currentPart;
+  var key=p||'design';
+  if(Array.isArray(wikiAssetsCache[key])) return wikiAssetsCache[key];
   try{
-    const res=await fetch('/api/wiki-assets?part='+encodeURIComponent(p||'design'));
-    if(!res.ok)return [];
+    const res=await fetch('/api/wiki-assets?part='+encodeURIComponent(key));
+    if(!res.ok) return [];
     const data=await res.json();
-    return Array.isArray(data.assets)?data.assets:[];
+    const assets=Array.isArray(data.assets)?data.assets:[];
+    wikiAssetsCache[key]=assets;
+    return assets;
   }catch(e){ return []; }
 }
 
@@ -1040,7 +1065,7 @@ async function sendChat(text){
     if(isIpSituation){
       var parts=partIds.length?partIds:['design','video'];
       var allAssets=[]; for(var pi=0;pi<parts.length;pi++){ var ax=await getWikiAssets(parts[pi]); allAssets=allAssets.concat(ax||[]); }
-      var combinedWiki=''; for(var wi=0;wi<parts.length;wi++){ var rx=await fetch('/api/wiki?part='+encodeURIComponent(parts[wi])); var dx=await rx.json(); combinedWiki+=(dx.content||'')+'\n\n'; }
+      var combinedWiki=''; for(var wi=0;wi<parts.length;wi++){ var ctx=await getWikiContext(parts[wi]); combinedWiki+=(ctx||'')+'\n\n'; }
       result=await getRecommendedAssets(v,{wikiContext:combinedWiki,creativeMode:true});
       reply=result.reply||'해당 IP 상황에 맞는 크리에이티브 어셋을 추천했습니다.';
       var typingDel=document.getElementById('typingMsg'); if(typingDel)typingDel.remove();
@@ -1053,7 +1078,7 @@ async function sendChat(text){
     }else{
       var parts=partIds.length?partIds:['design','video'];
       var allAssetsWithPart=[]; for(var pi=0;pi<parts.length;pi++){ var ax=await getWikiAssets(parts[pi]); (ax||[]).forEach(function(a){ a.part=parts[pi]; allAssetsWithPart.push(a); }); }
-      var combinedWikiCtx=''; for(var wi=0;wi<parts.length;wi++){ var rw=await fetch('/api/wiki?part='+encodeURIComponent(parts[wi])); var dw=await rw.json(); combinedWikiCtx+=(dw.content||'')+'\n\n'; }
+      var combinedWikiCtx=''; for(var wi=0;wi<parts.length;wi++){ var ctx2=await getWikiContext(parts[wi]); combinedWikiCtx+=(ctx2||'')+'\n\n'; }
       result=await getRecommendedAssets(v,{wikiContext:combinedWikiCtx,contextAware:true});
       reply=result.reply||'입력하신 내용에 맞는 어셋을 오른쪽에 표시했습니다.';
       var typingDel2=document.getElementById('typingMsg'); if(typingDel2)typingDel2.remove();
