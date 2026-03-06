@@ -7,7 +7,7 @@ const VERTEX_LOCATION =
   process.env.GOOGLE_CLOUD_LOCATION || process.env.VERTEX_LOCATION || 'us-central1';
 
 const VERTEX_MODEL =
-  process.env.VERTEX_MODEL || 'gemini-1.5-flash';
+  process.env.VERTEX_MODEL || 'gemini-2.0-flash';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
