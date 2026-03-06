@@ -1,12 +1,13 @@
-import {
-  hasVertexConfig,
-  getVertexAccessToken,
-  VERTEX_PROJECT,
-  VERTEX_LOCATION,
-  VERTEX_MODEL,
-} from '../lib/vertex.js';
+import { hasVertexConfig, getVertexAccessToken } from '../lib/vertex.js';
 
-export const config = { runtime: 'nodejs' };
+const VERTEX_PROJECT =
+  process.env.GOOGLE_CLOUD_PROJECT || process.env.VERTEX_PROJECT || '';
+
+const VERTEX_LOCATION =
+  process.env.GOOGLE_CLOUD_LOCATION || process.env.VERTEX_LOCATION || 'us-central1';
+
+const VERTEX_MODEL =
+  process.env.VERTEX_MODEL || 'gemini-1.5-flash';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -35,6 +36,7 @@ export default async function handler(req, res) {
     }
 
     const token = await getVertexAccessToken();
+
     const url = `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_MODEL}:generateContent`;
 
     const proxyRes = await fetch(url, {
@@ -51,11 +53,10 @@ export default async function handler(req, res) {
 
     const raw = await proxyRes.text();
     let data = {};
+
     try {
       data = raw ? JSON.parse(raw) : {};
-    } catch (_) {
-      data = {};
-    }
+    } catch (_) {}
 
     if (!proxyRes.ok) {
       const msg = data?.error?.message || raw || `Vertex error: ${proxyRes.status}`;
@@ -64,6 +65,7 @@ export default async function handler(req, res) {
 
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     return res.status(200).json({ text: String(text).trim() });
+
   } catch (e) {
     console.error('[Vertex AI 오류]', e);
     return res.status(500).json({ error: e?.message || String(e) });
