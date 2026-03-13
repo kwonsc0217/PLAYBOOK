@@ -17,6 +17,12 @@ var slidesByWorkType={};
 let selCat,selWork,selWeeks,selSteps,selStepLabels=[],curSlide=0;
 function partDisplayName(id){ return (id||'').charAt(0).toUpperCase()+(id||'').slice(1).toLowerCase(); }
 var creativeAssetsMode=false;  // IP 버튼 클릭 시 true → 01. CREATIVE ASSETS 표시
+var currentDisplayedAssets=[];  // 현재 표시 중인 어셋 목록
+var fixedRecommendedAssets=[];  // AI 추천 고정 목록 (최대 5개)
+function showRightSections(){
+  var ids=['catInline','wfSec','faqSec'];
+  ids.forEach(function(id){ var el=document.getElementById(id); if(el)el.style.display=''; });
+}
 function updateAssetPanelTitle(){
   var el=document.getElementById('assetPanelTitle');
   if(!el)return;
@@ -27,7 +33,6 @@ function updateAssetPanelTitle(){
 }
 
 function goHome(){
-  document.body.classList.remove('split-expanded');
   document.querySelectorAll('.ip-btn').forEach(b=>b.classList.remove('sel'));
   var chat=document.getElementById('chat');
   if(chat)chat.classList.remove('show');
@@ -39,8 +44,14 @@ function goHome(){
   var list=document.getElementById('assetList');
   if(list){
     list.classList.remove('asset-grid');
-    list.innerHTML='<div class="asset-empty" id="assetEmpty"><span class="asset-loading-text">AI가 생각 중...</span></div>';
+    list.innerHTML='<div class="asset-empty" id="assetEmpty">왼쪽 AI 검색에 대한 구체적인 안내를 제공합니다.<br>또는 IP 상황을 선택하시면 자세한 설명을 확인하실 수 있습니다.</div>';
   }
+  var header=document.getElementById('assetPanelHeader');
+  if(header)header.style.display='none';
+  ['catInline','tlSec','formSec','wfSec','faqSec'].forEach(function(id){ var el=document.getElementById(id); if(el)el.style.display='none'; });
+  currentDisplayedAssets=[];
+  fixedRecommendedAssets=[];
+  selCat=null;selWork=null;selWeeks=null;selSteps=null;selStepLabels=[];
 }
 
 // Init + 이벤트 바인딩 — DOM 준비 후 한 번에 실행 (스크립트 오류 방지)
@@ -82,7 +93,35 @@ function bindEvents(){
   if(modalClose)modalClose.onclick=()=>closeSlideModal();
   const reqDate=document.getElementById('reqDate');
   const dlDate=document.getElementById('dlDate');
-  if(reqDate)reqDate.onchange=function(){if(this.value&&selWeeks){const dl=document.getElementById('dlDate');if(dl){dl.value=addBiz(new Date(this.value),selWeeks*5).toISOString().split('T')[0];dl.dispatchEvent(new Event('change'));}}};
+  if(reqDate&&!reqDate.value) reqDate.value=new Date().toISOString().split('T')[0];
+  if(reqDate)reqDate.onchange=function(){
+    if(!this.value||!selWork||!selWeeks)return;
+    var s=new Date(this.value);
+    var recommendedEnd=addBiz(s,selWeeks*5);
+    var labels=Array.isArray(selStepLabels)&&selStepLabels.length?selStepLabels:[];
+    var n=labels.length>0?labels.length+1:Math.max(2,selSteps||2);
+    var tot=getBiz(s,recommendedEnd);
+    var msHtml='',phases=[],phasesHtml='';
+    for(var i=0;i<n;i++){
+      var pct=i===0?0:(i===n-1?100:Math.round((i/(n-1))*100));
+      var d=i===0?s:(i===n-1?recommendedEnd:addBiz(s,Math.floor(tot*(i/(n-1)))));
+      var lbl,sublbl;
+      if(labels.length>0){
+        lbl=i===0?'시작':(i===n-1?labels[labels.length-1]:labels[i-1]);
+        sublbl=i===0?fmt(s):(i===n-1?fmt(recommendedEnd):(labels[i-1].split(/\s*[-–—]\s*/)[1]||labels[i-1]));
+      }else{
+        lbl=i===0?'시작':(i===n-1?'완료':'R'+i);
+        sublbl=i===0?fmt(s):(i===n-1?fmt(recommendedEnd):(i===1?'WIP':'R'+i));
+      }
+      var cls=i===0?'':(i===n-1?'dl':'r'+(i));
+      msHtml+='<div class="tl-ms"><div class="ms-dot '+cls+'"></div><div class="ms-label '+cls+'">'+lbl+'</div><div class="ms-date">'+sublbl+'</div></div>';
+      if(i>0)phases.push({lbl:lbl,pct:pct,d:d,cls:cls});
+    }
+    phasesHtml=phases.map(function(p){return '<div class="phase '+p.cls+'"><h4>'+p.lbl+(p.pct<100?' ('+p.pct+'%)':'')+'</h4><div class="date">'+fmt(p.d)+'</div></div>';}).join('');
+    var tlVisual=document.getElementById('tlVisual');
+    if(tlVisual)tlVisual.innerHTML='<div class="tl-recommend-label">추천 일정</div><div class="tl-track"><div class="tl-line"></div>'+msHtml+'</div><div class="tl-phases">'+phasesHtml+'</div>';
+    var fWork=document.getElementById('fWork');if(fWork)fWork.value=selWork||'';
+  };
   if(dlDate)dlDate.onchange=function(){
     if(!this.value||!selWork)return;
     const s=new Date(document.getElementById('reqDate').value),e=new Date(this.value),tot=getBiz(s,e);
@@ -106,11 +145,7 @@ function bindEvents(){
     }
     phasesHtml=phases.map(function(p){return '<div class="phase '+p.cls+'"><h4>'+p.lbl+(p.pct<100?' ('+p.pct+'%)':'')+'</h4><div class="date">'+fmt(p.d)+'</div></div>';}).join('');
     const tlVisual=document.getElementById('tlVisual');if(tlVisual)tlVisual.innerHTML='<div class="tl-track"><div class="tl-line"></div>'+msHtml+'</div><div class="tl-phases">'+phasesHtml+'</div>';
-    const formSec=document.getElementById('formSec');if(formSec)formSec.style.display='block';
-    const fReqDate=document.getElementById('fReqDate');if(fReqDate)fReqDate.value=document.getElementById('reqDate').value;
     const fWork=document.getElementById('fWork');if(fWork)fWork.value=selWork;
-    const fDl=document.getElementById('fDl');if(fDl)fDl.value=this.value;
-    setTimeout(()=>{const fs=document.getElementById('formSec');if(fs)fs.scrollIntoView({behavior:'smooth'});},300);
   };
   const submitBtn=document.getElementById('submitBtn');
   if(submitBtn)submitBtn.onclick=async function(){try{var ok=await copyRequestToClipboard();if(ok){alert('복사완료! 위키에 붙여넣기(Ctrl+V) 하세요.');this.textContent='✔ 복사 완료';this.style.background='#00c853';setTimeout(()=>{this.textContent='요청서 복사';this.style.background='';},2000);}else alert('복사 실패');}catch(e){alert('복사 실패');}};
@@ -344,6 +379,13 @@ async function callGemini(prompt,maxTokens=500,opts){
 async function getRecommendedAssets(userInput,opts){
   var isCreative=opts&&opts.creativeMode;
   var contextAware=opts&&opts.contextAware;
+  var replyStyle=`reply 작성 규칙:
+- 딱딱하고 형식적인 말투는 피하고, 동료에게 편하게 이야기하듯 자연스럽고 친근하게 답변하세요.
+- 사용자의 상황이나 맥락에 공감하는 한마디를 넣어주세요. (예: "오 재밌겠네요!", "타이트하시겠다…", "좋은 프로젝트네요!")
+- 추천 이유를 간단히 설명하되, 위키 내용을 앵무새처럼 반복하지 말고 자기 말로 풀어서 설명하세요.
+- 오른쪽에 추천 목록이 표시된다고 자연스럽게 안내해주세요.
+- 2~4문장, 한국어로 작성.`;
+
   var prompt=isCreative
     ?`당신은 게임/IP 크리에이티브(디자인·비디오 등) 팀의 도우미입니다.
 사용자 입력: "${userInput}"
@@ -352,26 +394,37 @@ async function getRecommendedAssets(userInput,opts){
 
 다음 JSON 형식으로만 응답하세요.
 {
-  "reply": "사용자에게 할 짧은 답변 (2~4문장). 오른쪽에 추천 목록이 표시된다고 안내.",
+  "reply": "자연스러운 한국어 답변",
   "assets": [
     { "name": "위키에 있는 작업명 그대로", "duration": "예: 6~8주", "details": ["상세 1"] }
   ]
 }
-규칙: reply는 한국어로. assets는 위키에 나온 작업명만 사용. 최대 6개. duration·details는 위키 참고.`
+${replyStyle}
+규칙: assets는 위키에 나온 작업명만 사용. 최대 6개. duration·details는 위키 참고.`
     :contextAware
     ?`당신은 게임/IP 크리에이티브(디자인·비디오) 팀의 도우미입니다.
 사용자 입력: "${userInput}"
 
-위 [팀 위키]에는 디자인 작업(키아트, 로고, Brand Guide, SNS, OOH/포스터 등)과 비디오 작업(시네마틱 트레일러, 게임플레이 트레일러, 티저, 숏폼 영상 등)이 모두 나열되어 있습니다.
+위 [팀 위키]에는 디자인 작업(KEYART, Logo, Brand Guide, Youtube Thumbnail, SNS Images, PR Images, OOH / Poster, Package, Goods)과 비디오 작업(시네마틱 트레일러, 게임플레이 트레일러, 티저, 숏폼 영상 등)이 모두 나열되어 있습니다.
 
-**맥락 판단**: 사용자 요청이 "영상·트레일러·비디오·게임플레이 영상·시네마틱·티저·홍보 영상" 등이면 **비디오** 위키 항목만 추천하세요. "키아트·로고·디자인·SNS·포스터·썸네일·브랜딩" 등이면 **디자인** 위키 항목만 추천하세요.
+**핵심 규칙 — 사용자가 특정 작업을 직접 언급한 경우**:
+- "키아트 만들고 싶어" → KEYART만 추천. 다른 항목 추가 금지.
+- "로고 필요해" → Logo만 추천. 다른 항목 추가 금지.
+- "썸네일이랑 SNS 이미지" → Youtube Thumbnail, SNS Images만 추천.
+- 사용자가 명시한 어셋만 정확히 추천하세요. 요청하지 않은 항목을 임의로 추가하지 마세요.
+
+**사용자가 구체적 작업을 언급하지 않고 넓은 상황만 설명한 경우** (예: "신규 게임 런칭 준비"):
+- 그 상황에 필요한 항목을 3~6개 추천하세요.
+
+**맥락 판단**: "영상·트레일러·비디오" 등이면 비디오 위키 항목만, "키아트·로고·디자인·SNS" 등이면 디자인 위키 항목만 추천하세요.
 
 다음 JSON만 응답하세요.
 {
-  "reply": "친절한 한국어 답변 (2~4문장). 추천한 유형(디자인/비디오)과 오른쪽 표시를 안내.",
+  "reply": "자연스러운 한국어 답변",
   "assets": [ { "name": "위키 작업명 그대로", "duration": "예: 6~8주", "details": ["상세"] } ]
 }
-규칙: assets는 위키에 있는 이름만. 한 요청에 디자인·비디오 섞지 말고, 맥락에 맞는 한 쪽만 3~6개.`
+${replyStyle}
+규칙: assets의 name은 위키에 있는 이름만. 디자인·비디오 섞지 마세요.`
     :`당신은 게임/IP 마케팅 디자인 팀의 도우미입니다.
 사용자 입력: "${userInput}"
 
@@ -379,18 +432,19 @@ async function getRecommendedAssets(userInput,opts){
 
 다음 JSON 형식으로만 응답하세요. 다른 설명은 하지 마세요.
 {
-  "reply": "사용자에게 할 짧은 답변 (2~4문장). 이 상황에 필요한 작업을 요약하고, 오른쪽에 목록이 표시된다고 안내.",
+  "reply": "자연스러운 한국어 답변",
   "assets": [
     { "name": "위키에 있는 작업명 그대로", "duration": "예: 6~8주", "details": ["상세 1", "상세 2"] }
   ]
 }
 
-규칙:
-- reply는 친근하고 간결하게, 한국어로.
-- assets는 반드시 위키(도메인 지식)에 적힌 작업 항목만 포함하세요. 위키에 없는 항목은 추천하지 마세요.
-- 트레일러, 영상 제작, 부스 영상 등은 디자인팀 영역이 아니므로 추천하지 마세요.
-- name은 반드시 아래 중 하나만 사용: KEYART, Logo, Brand Guide, Youtube Thumbnail, SNS Images, PR Images, OOH / Poster, Package, Goods (위키 행 기준). 이 외 항목은 추천하지 마세요.
-- duration·details는 위키 내용을 참고하여 작성. 3~6개 정도, 이 IP/상황에 맞는 위키 내 작업만 제안.`;
+${replyStyle}
+assets 규칙:
+- name은 반드시 아래 중 하나만 사용: KEYART, Logo, Brand Guide, Youtube Thumbnail, SNS Images, PR Images, OOH / Poster, Package, Goods. 이 외 항목은 추천하지 마세요.
+- **사용자가 특정 작업을 직접 언급한 경우 해당 항목만 추천하세요. 요청하지 않은 항목을 임의로 추가하지 마세요.**
+  예: "키아트 만들고 싶어" → KEYART 1개만. "로고랑 패키지" → Logo, Package 2개만.
+- 사용자가 구체적 작업을 언급하지 않고 넓은 상황만 설명한 경우에만 3~6개를 추천하세요.
+- duration·details는 위키 내용을 참고하여 작성.`;
 
   try{
     var wikiCtx=(opts&&opts.wikiContext!=null)?String(opts.wikiContext).trim():await getWikiContext();
@@ -466,7 +520,7 @@ function filterRecommendedByWiki(aiAssets,wikiAssets){
       out.push(allowedWiki[idx]);
     }
   }
-  return out.length?out:allowedWiki;
+  return out;
 }
 
 // IP/크리에이티브 모드: 허용 목록 없이 전체 위키 어셋 중 이름 매칭해 추천 (최대 6개)
@@ -526,16 +580,23 @@ function getCategoryFromAssetName(name){
 
 function escHtml(s){ return (s+'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-// 오른쪽 필요 어셋 패널 렌더
-function renderAssetPanel(assets){
+// 오른쪽 필요 어셋 패널 렌더 (바 스택 아코디언 + 인라인 타임라인)
+function renderAssetPanel(assets,opts){
   var list=document.getElementById('assetList');
+  var header=document.getElementById('assetPanelHeader');
   if(!list)return;
-  var arr=Array.isArray(assets)?assets:[];
+  var arr=Array.isArray(assets)?assets.slice(0,6):[];
   if(arr.length===0){
     list.classList.remove('asset-grid');
-    list.innerHTML='<div class="asset-empty" id="assetEmpty">위키에 필수 어셋 목록(테이블)을 입력하면 여기에 표시됩니다. 위키 설정: 실행방법 참고.</div>';
+    if(header)header.style.display='none';
+    list.innerHTML='<div class="asset-empty" id="assetEmpty">왼쪽 AI 검색에 대한 구체적인 안내를 제공합니다.<br>또는 IP 상황을 선택하시면 자세한 설명을 확인하실 수 있습니다.</div>';
     return;
   }
+  if(header)header.style.display='';
+  var catInlineEl=document.getElementById('catInline');
+  if(catInlineEl)catInlineEl.style.display='';
+  currentDisplayedAssets=arr.slice();
+  if(!(opts&&opts.keepFixed)) fixedRecommendedAssets=arr.slice(0,5);
   list.classList.add('asset-grid');
   try{
     list.innerHTML=arr.map(function(a,i){
@@ -543,11 +604,51 @@ function renderAssetPanel(assets){
       var name=escHtml(rawName);
       var duration=escHtml(a.duration||'')||'-';
       var details=Array.isArray(a.details)?a.details:[];
-      var detailHtml=details.length
-        ?'<div class="asset-detail"><ul>'+details.map(function(d){return '<li>'+escHtml(d)+'</li>';}).join('')+'</ul></div>'
-        :'';
+      var images=a.images||slidesByWorkType[rawName]||[];
+      var stepsCount=a.steps?countSteps(a.steps):0;
+      var category=escHtml(a.category||'');
+      var infoHtml='';
+      var detailHtml='';
+      if(details.length){
+        detailHtml='<div class="asset-notice-title">세부 유의 사항</div>'
+          +'<ul>'+details.map(function(d){return '<li>'+escHtml(d)+'</li>';}).join('')+'</ul>';
+      }
+      var hasImages=images.length>0;
+      var imageHtml='';
+      if(hasImages){
+        var encodedImgs=encodeURIComponent(JSON.stringify(images));
+        var firstUrl=images[0];
+        var firstIsVideo=isVideoUrl(firstUrl);
+        var firstEmbed=firstIsVideo?getEmbedVideoUrl(firstUrl):'';
+        var previewStyle=firstIsVideo?'':'background-image:url('+escHtml(firstUrl)+')';
+        var previewInner='';
+        if(firstIsVideo){
+          if(firstEmbed){
+            previewInner='<div class="sl-iframe-wrap" style="position:absolute;inset:0;width:100%;height:100%"><iframe src="'+escHtml(firstEmbed)+'" style="width:100%;height:100%;border:0" allowfullscreen></iframe></div>';
+          }else{
+            previewInner='<video class="sl-video" controls muted playsinline src="'+escHtml(firstUrl)+'" style="display:block"></video>';
+          }
+        }
+        imageHtml='<div class="asset-preview-wrap" data-images="'+encodedImgs+'">'
+          +'<div class="asset-preview" data-slide="0" style="'+previewStyle+'">'
+          +previewInner
+          +(images.length>1?'<button type="button" class="sl-arr l asset-sl-prev">‹</button><button type="button" class="sl-arr r asset-sl-next">›</button>':'')
+          +'<div class="sl-dots">'+images.map(function(_,j){return '<span class="sl-dot'+(j===0?' on':'')+'" data-j="'+j+'"></span>';}).join('')+'</div>'
+          +'</div></div>';
+      }
       var escAttr=rawName.replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      return '<div class="asset-item" data-i="'+i+'" data-asset-name="'+escAttr+'"><h4>'+name+'</h4><div class="asset-meta">'+duration+'</div>'+detailHtml+'<div class="asset-more-wrap"><button type="button" class="asset-goto-request">요청서 작성</button><button type="button" class="asset-more" title="더 알아보기"><span class="asset-more-arrow">▼</span> 더보기</button></div></div>';
+      var innerCls='asset-detail-inner'+(hasImages?' has-preview':'');
+      return '<div class="asset-item" data-i="'+i+'" data-asset-name="'+escAttr+'">'
+        +'<div class="asset-bar">'
+        +'<div class="asset-bar-left"><h4>'+name+'</h4><span class="asset-meta">'+duration+'</span></div>'
+        +'<button type="button" class="asset-more" title="더 알아보기"><span class="asset-more-arrow">▼</span> 더보기</button>'
+        +'</div>'
+        +'<div class="asset-detail"><div class="'+innerCls+'">'
+        +(hasImages
+          ?'<div class="asset-detail-left">'+infoHtml+detailHtml+'</div>'+imageHtml
+          :'<div class="asset-detail-left">'+infoHtml+detailHtml+'</div>')
+        +'</div><div class="asset-detail-footer"><button type="button" class="asset-goto-request">요청서 작성</button></div></div>'
+        +'</div>';
     }).join('');
   }catch(e){
     console.error('renderAssetPanel:',e);
@@ -556,29 +657,86 @@ function renderAssetPanel(assets){
     return;
   }
   list.querySelectorAll('.asset-item').forEach(function(el){
+    var bar=el.querySelector('.asset-bar');
     var more=el.querySelector('.asset-more');
     var gotoBtn=el.querySelector('.asset-goto-request');
     var assetName=el.getAttribute('data-asset-name')||'';
+    function toggleOpen(){
+      var willOpen=!el.classList.contains('open');
+      list.querySelectorAll('.asset-item.open').forEach(function(other){
+        if(other===el)return;
+        other.classList.remove('open');
+        var otherMore=other.querySelector('.asset-more');
+        if(otherMore){ otherMore.title='더 알아보기'; otherMore.lastChild.textContent=' 더보기'; }
+      });
+      el.classList.toggle('open',willOpen);
+      if(more){
+        more.title=willOpen?'접기':'더 알아보기';
+        more.lastChild.textContent=willOpen?' 접기':' 더보기';
+      }
+    }
     function goToRequestForm(){
+      showRightSections();
+      var formSec=document.getElementById('formSec');
+      if(formSec)formSec.style.display='block';
       var mapped=getCategoryFromAssetName(assetName);
-      var catSec=document.getElementById('catSec');
-      if(catSec)catSec.scrollIntoView({behavior:'smooth',block:'start'});
       if(mapped.part&&mapped.part!==currentPart) switchPart(mapped.part,function(){ selectCat(mapped.cid,mapped.work); });
       else selectCat(mapped.cid,mapped.work);
+      setTimeout(function(){if(formSec)formSec.scrollIntoView({behavior:'smooth'});},200);
     }
-    if(more){
-      more.onclick=function(){
-        el.classList.toggle('open');
-        var arrow=more.querySelector('.asset-more-arrow');
-        if(arrow){
-          arrow.textContent=el.classList.contains('open')?'▲':'▼';
-        }
-        more.title=el.classList.contains('open')?'접기':'더 알아보기';
-        more.lastChild.textContent=el.classList.contains('open')?' 접기':' 더보기';
-      };
-    }
+    if(bar)bar.onclick=toggleOpen;
+    if(more)more.onclick=function(e){ e.stopPropagation(); toggleOpen(); };
     if(gotoBtn)gotoBtn.onclick=goToRequestForm;
+    var previewWrap=el.querySelector('.asset-preview-wrap');
+    if(previewWrap){
+      var previewDiv=previewWrap.querySelector('.asset-preview');
+      var imgsJson=previewWrap.getAttribute('data-images');
+      var imgs=[];
+      try{ imgs=JSON.parse(decodeURIComponent(imgsJson||'[]')); }catch(_){}
+      var curIdx=0;
+      function updateCardSlide(idx){
+        if(!imgs.length)return;
+        curIdx=Math.max(0,Math.min(idx,imgs.length-1));
+        var url=imgs[curIdx];
+        var vid=previewDiv.querySelector('.sl-video');
+        var ifw=previewDiv.querySelector('.sl-iframe-wrap');
+        if(isVideoUrl(url)){
+          previewDiv.style.backgroundImage='none';
+          var embed=getEmbedVideoUrl(url);
+          if(embed){
+            if(vid){vid.pause();vid.removeAttribute('src');vid.style.display='none';}
+            if(!ifw){ifw=document.createElement('div');ifw.className='sl-iframe-wrap';ifw.style.cssText='position:absolute;inset:0;width:100%;height:100%';previewDiv.insertBefore(ifw,previewDiv.firstChild);}
+            ifw.innerHTML='<iframe src="'+embed+'" style="width:100%;height:100%;border:0" allowfullscreen></iframe>';
+            ifw.style.display='block';
+          }else{
+            if(ifw){ifw.innerHTML='';ifw.style.display='none';}
+            if(!vid){vid=document.createElement('video');vid.className='sl-video';vid.controls=true;vid.muted=true;vid.playsInline=true;previewDiv.insertBefore(vid,previewDiv.firstChild);}
+            vid.src=url;vid.style.display='block';vid.play().catch(function(){});
+          }
+        }else{
+          if(vid){vid.pause();vid.removeAttribute('src');vid.style.display='none';}
+          if(ifw){ifw.innerHTML='';ifw.style.display='none';}
+          previewDiv.style.backgroundImage='url('+url+')';
+        }
+        previewDiv.setAttribute('data-slide',curIdx);
+        previewDiv.querySelectorAll('.sl-dot').forEach(function(d,j){ d.classList.toggle('on',j===curIdx); });
+      }
+      var prevBtn=previewDiv.querySelector('.asset-sl-prev');
+      var nextBtn=previewDiv.querySelector('.asset-sl-next');
+      if(prevBtn) prevBtn.onclick=function(e){ e.stopPropagation(); updateCardSlide(curIdx-1); };
+      if(nextBtn) nextBtn.onclick=function(e){ e.stopPropagation(); updateCardSlide(curIdx+1); };
+      previewDiv.querySelectorAll('.sl-dot').forEach(function(dot){
+        dot.onclick=function(e){ e.stopPropagation(); updateCardSlide(parseInt(dot.getAttribute('data-j'),10)||0); };
+      });
+      previewDiv.onclick=function(){ if(typeof openSlideModal==='function') openSlideModal(imgs[curIdx]); };
+    }
   });
+  var firstItem=list.querySelector('.asset-item');
+  if(firstItem){
+    firstItem.classList.add('open');
+    var firstMore=firstItem.querySelector('.asset-more');
+    if(firstMore){ firstMore.title='접기'; firstMore.lastChild.textContent=' 접기'; }
+  }
 }
 
 // AI API 호출하여 사용자 입력 파싱 (개인 Gemini API)
@@ -850,7 +1008,7 @@ async function editField(field,value){
     reference:{el:'fRef',label:'레퍼런스',needsAI:false},
     spec:{el:'fSpec',label:'스펙',needsAI:false},
     projectName:{el:'projTitle',label:'프로젝트명',needsAI:false},
-    deadline:{el:'fDl',label:'마감일',needsAI:false}
+    deadline:{el:'dlDate',label:'마감일',needsAI:false}
   };
   
   const info=fieldMap[field];
@@ -928,33 +1086,22 @@ async function autoFillForm(data,isUpdate=false){
     hasFormData=true;
   }
   
-  // 카테고리/작업유형 선택 시 전체 플로우
+  // 카테고리/작업유형 내부 상태만 세팅 (어셋 카드를 다시 렌더하지 않음)
   if(data.category){
-    selectCat(data.category,data.workType);
+    selCat=data.category;
+    document.querySelectorAll('.cat-item').forEach(el=>el.classList.toggle('sel',el.dataset.c===data.category));
+    if(data.workType){
+      selWork=data.workType;
+      $('fWork').value=data.workType;
+    }
     setTimeout(()=>{
-      if(data.workType){
-        const wtEl=[...$('wtGrid').children].find(e=>e.dataset.w===data.workType);
-        if(wtEl)selectWork(wtEl);
+      const today=new Date();
+      if(!$('reqDate').value)$('reqDate').value=today.toISOString().split('T')[0];
+      if(data.deadline){
+        $('dlDate').value=data.deadline;
+        $('dlDate').dispatchEvent(new Event('change'));
       }
-      setTimeout(()=>{
-        const today=new Date();
-        if(!$('reqDate').value)$('reqDate').value=today.toISOString().split('T')[0];
-        if(data.deadline){
-          $('dlDate').value=data.deadline;
-          $('dlDate').dispatchEvent(new Event('change'));
-        }else if(hasFormData){
-          // 마감일 없어도 폼 데이터 있으면 폼 섹션 표시
-          $('formSec').style.display='block';
-          $('fReqDate').value=$('reqDate').value;
-          $('fWork').value=selWork||'';
-          setTimeout(()=>$('formSec').scrollIntoView({behavior:'smooth'}),300);
-        }
-      },300);
     },100);
-  }else if(hasFormData){
-    // 카테고리 없이 폼 데이터만 있는 경우 (추가 정보 입력)
-    $('formSec').style.display='block';
-    setTimeout(()=>$('formSec').scrollIntoView({behavior:'smooth'}),300);
   }
 }
 
@@ -972,12 +1119,20 @@ function addMsg(t,isUser,buttons=[]){
   msgsEl.appendChild(m);
   msgsEl.scrollTop=msgsEl.scrollHeight;
   m.querySelectorAll('.action-btn').forEach(function(btn){
-    btn.onclick=function(){ handleAction(btn.dataset.action); };
+    btn.onclick=function(){
+      btn.classList.remove('disabled');
+      btn.classList.add('selected');
+      handleAction(btn.dataset.action);
+    };
   });
 }
 
 // 버튼 액션 처리
 async function handleAction(action){
+  if(action.indexOf('ipfollow:')===0){
+    sendChat(action.substring(9));
+    return;
+  }
   if(action==='startRequest'){
     addMsg('요청서 작성을 시작할게요!',false);
     // 저장된 파싱 데이터로 폼 채우기
@@ -1121,9 +1276,43 @@ function getFieldLabel(field){
 }
 
 let chatExpanded=false;
+var ipFollowUp={
+  '#베타 테스트':{
+    firstMsg:'베타 테스트 상황에 맞는 크리에이티브를 준비해 드리겠습니다.\n\n오픈 베타인가요, 클로즈드 베타인가요?\n게임 빌드는 촬영 준비가 된 상태인가요?',
+    questions:[
+      {label:'오픈 베타 테스트',action:'#베타 테스트 오픈 베타 테스트 크리에이티브 준비'},
+      {label:'클로즈드 베타 테스트',action:'#베타 테스트 클로즈드 베타 테스트 크리에이티브 준비'},
+      {label:'바로 추천받기',action:'#베타 테스트 전체 크리에이티브 추천'}
+    ]
+  },
+  '#게임쇼 출품':{
+    firstMsg:'게임쇼 출품을 준비하시는군요!\n\n어떤 게임쇼를 염두에 두고 계신가요?\n보통 쇼 기준 4~5개월 전쯤 참가가 확정되는 경우가 많습니다.',
+    questions:[
+      {label:'Gamescom (8월 말, 독일 쾰른)',action:'#게임쇼 출품 Gamescom 출품 크리에이티브 준비'},
+      {label:'Tokyo Game Show (9월 하순)',action:'#게임쇼 출품 Tokyo Game Show 출품 크리에이티브 준비'},
+      {label:'G-STAR (11월, 부산)',action:'#게임쇼 출품 부산 G-STAR 출품 크리에이티브 준비'},
+      {label:'기타 게임쇼',action:'#게임쇼 출품 게임쇼 출품 크리에이티브 전체 추천'}
+    ]
+  },
+  '#얼리 액세스':{
+    firstMsg:'얼리 액세스 상황에 적합한 디자인 및 비디오 항목을 추천해 드리겠습니다.\n\n어떤 게임의 얼리 액세스인가요?\n시네마틱이나 게임플레이 영상도 필요하신가요?',
+    questions:[
+      {label:'디자인 + 영상 모두 필요',action:'#얼리 액세스 디자인과 영상 모두 크리에이티브 추천'},
+      {label:'디자인 위주',action:'#얼리 액세스 디자인 위주 크리에이티브 추천'},
+      {label:'영상 위주',action:'#얼리 액세스 영상 위주 크리에이티브 추천'}
+    ]
+  },
+  '#런칭 전/후':{
+    firstMsg:'런칭 관련 크리에이티브를 준비하시는군요!\n\n현재 어떤 단계이신가요?\n게임 빌드는 촬영 준비가 된 상태인가요? 시네마틱을 포함하나요?',
+    questions:[
+      {label:'런칭 전 (사전 마케팅)',action:'#런칭 전/후 런칭 전 사전 마케팅 크리에이티브 준비'},
+      {label:'런칭 후 (라이브 운영)',action:'#런칭 전/후 런칭 후 라이브 서비스 크리에이티브 준비'},
+      {label:'바로 추천받기',action:'#런칭 전/후 런칭 전후 전체 크리에이티브 추천'}
+    ]
+  }
+};
 
 async function sendChat(text){
-  document.body.classList.add('split-expanded');
   var sInput=document.getElementById('sInput'), cInput=document.getElementById('cInput');
   var v=typeof text==='string'?text:((sInput&&sInput.value)||(cInput&&cInput.value)||'').trim();
   if(!v)return;
@@ -1133,7 +1322,7 @@ async function sendChat(text){
   if(!chatExpanded&&chatEl){
     chatEl.classList.add('show');
     chatExpanded=true;
-    addMsg('안녕하세요, 저는 GCD PLAYBOOK입니다. 필요한 어셋을 오른쪽에 추천해 드립니다.',false);
+    addMsg('안녕하세요, GCD PLAYBOOK입니다. 어떤 작업을 도와드릴까요?',false);
   }
   addMsg(v,true);
 
@@ -1150,6 +1339,13 @@ async function sendChat(text){
   try{
     var toShow,fallback,result,reply;
     if(isIpSituation){
+      var ipKey=v.trim();
+      var ipFU=ipFollowUp[ipKey];
+      if(ipFU){
+        var typingDel0=document.getElementById('typingMsg');if(typingDel0)typingDel0.remove();
+        addMsg(ipFU.firstMsg,false,ipFU.questions.map(function(q){ return {label:q.label,action:'ipfollow:'+q.action,type:'disabled'}; }));
+        return;
+      }
       var parts=partIds.length?partIds:['design','video'];
       var allAssets=[]; for(var pi=0;pi<parts.length;pi++){ var ax=await getWikiAssets(parts[pi]); allAssets=allAssets.concat(ax||[]); }
       var combinedWiki=''; for(var wi=0;wi<parts.length;wi++){ var ctx=await getWikiContext(parts[wi]); combinedWiki+=(ctx||'')+'\n\n'; }
@@ -1174,7 +1370,9 @@ async function sendChat(text){
       var targetPart='design'; for(var mi=0;mi<matched.length;mi++){ if(matched[mi].part==='video'){ targetPart='video'; break; } }
       var thatPartAssets=allAssetsWithPart.filter(function(a){ return a.part===targetPart; });
       toShow=matched.filter(function(a){ return a.part===targetPart; });
-      if(!toShow.length)toShow=thatPartAssets.slice(0,6); else toShow=mergeWithWikiData(toShow,thatPartAssets);
+      if(toShow.length) toShow=mergeWithWikiData(toShow,thatPartAssets);
+      else if(!result.assets||!result.assets.length) toShow=thatPartAssets.slice(0,6);
+      else toShow=mergeWithWikiData(result.assets.map(function(ra){ return {name:ra.name,duration:ra.duration||'',details:ra.details||[],images:[]}; }),thatPartAssets);
       thatPartAssets.forEach(function(a){ if(a.images&&a.images.length) slidesByWorkType[a.name]=a.images; });
       window.wikiAssets=thatPartAssets;
       creativeAssetsMode=false;
@@ -1295,21 +1493,49 @@ function selectWork(el){
   selWeeks=+el.dataset.wk;
   selSteps=el.dataset.steps?parseInt(el.dataset.steps,10):null;
   try{ selStepLabels=JSON.parse(decodeURIComponent(el.dataset.stepLabels||'[]')); }catch(_){ selStepLabels=[]; }
-  $('selCat').textContent=cats.find(c=>c.id===selCat).nm;
-  $('selWt').textContent=selWork;
+  var catName=(cats.find(function(c){return c.id===selCat;})||{}).nm||'';
   var wkDisplay=el.getAttribute('data-wk-display');
-  $('estTime').textContent=(wkDisplay&&wkDisplay.trim()?wkDisplay:selWeeks+'주')+' 소요';
-  var stepsEl=document.getElementById('estSteps');
-  if(stepsEl) stepsEl.textContent=(el.dataset.steps||'-')+' 단계';
-  $('notice').innerHTML=decodeURIComponent(el.dataset.nt||'').split('\n').map(l=>`<p>${l}</p>`).join('');
-  var key=Object.keys(slidesByWorkType).find(function(k){return matchWorkToAsset(k,selWork);});
-  slides=(key&&slidesByWorkType[key]&&slidesByWorkType[key].length)?slidesByWorkType[key]:defaultSlides.slice();
-  curSlide=0;
-  var dotsEl=document.getElementById('dots');
-  if(dotsEl)dotsEl.innerHTML=slides.map(function(_,i){return '<span class="sl-dot'+(i===0?' on':'')+'" data-i="'+i+'"></span>';}).join('');
-  if(slides.length){ updateSlide(0); } else { var p=$('preview'); if(p){ p.style.backgroundImage='none'; p.style.backgroundColor='#f0f0f0'; } }
-  $('tlSec').style.display='block';
-  $('tlSec').scrollIntoView({behavior:'smooth'});
+  var durationStr=(wkDisplay&&wkDisplay.trim())?wkDisplay.trim():selWeeks+'주';
+  var noticeStr=decodeURIComponent(el.dataset.nt||'');
+  var detailsArr=noticeStr.split('\n').map(function(l){return l.replace(/^[•\s]+/,'').trim();}).filter(Boolean);
+  var wikiAsset=(window.wikiAssets||[]).find(function(a){return matchWorkToAsset(a.name,selWork);});
+  var imgsKey=Object.keys(slidesByWorkType).find(function(k){return matchWorkToAsset(k,selWork);});
+  var imgsArr=wikiAsset&&wikiAsset.images&&wikiAsset.images.length?wikiAsset.images:(imgsKey?slidesByWorkType[imgsKey]:[]);
+  var asset={
+    name:selWork,
+    category:catName,
+    duration:durationStr,
+    steps:el.dataset.steps?el.dataset.steps+'단계':'',
+    details:detailsArr.length?detailsArr:(wikiAsset&&wikiAsset.details?wikiAsset.details:[]),
+    images:imgsArr
+  };
+  var inFixed=fixedRecommendedAssets.some(function(a){ return matchWorkToAsset(a.name||'',asset.name||''); });
+  if(inFixed){
+    renderAssetPanel(fixedRecommendedAssets.slice(),{keepFixed:true});
+  }else{
+    renderAssetPanel(fixedRecommendedAssets.slice().concat([asset]),{keepFixed:true});
+  }
+  $('fWork').value=selWork||'';
+  var assetListEl=document.getElementById('assetList');
+  if(!assetListEl)return;
+  var allCards=assetListEl.querySelectorAll('.asset-item');
+  var targetCard=null;
+  allCards.forEach(function(card){
+    var cardName=card.getAttribute('data-asset-name')||'';
+    if(matchWorkToAsset(cardName,asset.name)) targetCard=card;
+  });
+  if(targetCard){
+    allCards.forEach(function(other){
+      if(other===targetCard)return;
+      other.classList.remove('open');
+      var otherMore=other.querySelector('.asset-more');
+      if(otherMore){ otherMore.title='더 알아보기'; otherMore.lastChild.textContent=' 더보기'; }
+    });
+    targetCard.classList.add('open');
+    var cardMore=targetCard.querySelector('.asset-more');
+    if(cardMore){ cardMore.title='접기'; cardMore.lastChild.textContent=' 접기'; }
+    targetCard.scrollIntoView({behavior:'smooth'});
+  }
 }
 
 // 영상 URL 여부. 직접 재생: .mp4/.webm/.mov/.ogv, 임베드: youtube/vimeo
@@ -1337,17 +1563,17 @@ function buildRequestTablePlain(rows){
 }
 async function copyRequestToClipboard(){
   var $=id=>document.getElementById(id);
-  var reqDate=($('fReqDate')&&$('fReqDate').value)||'';
-  var reqYear=reqDate; if(reqDate&&reqDate.length>=10){ var p=reqDate.split('-'); if(p.length===3) reqYear=p[0]+'년 '+parseInt(p[1],10)+'월 '+parseInt(p[2],10)+'일'; }
-  var dlDate=($('fDl')&&$('fDl').value)||'';
-  var dlYear=dlDate; if(dlDate&&dlDate.length>=10){ var q=dlDate.split('-'); if(q.length===3) dlYear=q[0]+'년 '+parseInt(q[1],10)+'월 '+parseInt(q[2],10)+'일'; }
+  var reqDateVal=($('reqDate')&&$('reqDate').value)||'';
+  var reqYear=reqDateVal; if(reqDateVal&&reqDateVal.length>=10){ var p=reqDateVal.split('-'); if(p.length===3) reqYear=p[0]+'년 '+parseInt(p[1],10)+'월 '+parseInt(p[2],10)+'일'; }
+  var dlDateVal=($('dlDate')&&$('dlDate').value)||'';
+  var dlYear=dlDateVal; if(dlDateVal&&dlDateVal.length>=10){ var q=dlDateVal.split('-'); if(q.length===3) dlYear=q[0]+'년 '+parseInt(q[1],10)+'월 '+parseInt(q[2],10)+'일'; }
   function cellHtml(t){ return nlToBr(escapeHtml(String(t||''))); }
   var rows=[
-    {label:'요청일*',valueHtml:escapeHtml(reqYear||reqDate),valuePlain:reqYear||reqDate},
+    {label:'요청일*',valueHtml:escapeHtml(reqYear||reqDateVal),valuePlain:reqYear||reqDateVal},
     {label:'요청자*',valueHtml:escapeHtml($('fName')&&$('fName').value),valuePlain:($('fName')&&$('fName').value)||''},
     {label:'부서/팀*',valueHtml:escapeHtml($('fDept')&&$('fDept').value),valuePlain:($('fDept')&&$('fDept').value)||''},
     {label:'요청 업무*',valueHtml:cellHtml($('fWork')&&$('fWork').value),valuePlain:($('fWork')&&$('fWork').value)||''},
-    {label:'희망 전달일*',valueHtml:escapeHtml(dlYear||dlDate),valuePlain:dlYear||dlDate},
+    {label:'희망 전달일*',valueHtml:escapeHtml(dlYear||dlDateVal),valuePlain:dlYear||dlDateVal},
     {label:'배경',valueHtml:cellHtml($('fBg')&&$('fBg').value),valuePlain:($('fBg')&&$('fBg').value)||''},
     {label:'목적',valueHtml:cellHtml($('fPurpose')&&$('fPurpose').value),valuePlain:($('fPurpose')&&$('fPurpose').value)||''},
     {label:'디렉션',valueHtml:cellHtml($('fDir')&&$('fDir').value),valuePlain:($('fDir')&&$('fDir').value)||''},

@@ -46,8 +46,9 @@ export default async function handler(req, res) {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
+        systemInstruction: { parts: [{ text: '당신은 게임회사 크리에이티브팀의 친근한 동료입니다. 격식체보다는 편안하고 자연스러운 말투를 사용하세요. 공감 표현을 자주 하고, 딱딱한 안내 문구 대신 실제 대화하듯 답변하세요.' }] },
         contents: [{ role: 'user', parts: [{ text: finalPrompt }] }],
-        generationConfig: { maxOutputTokens: maxTokens },
+        generationConfig: { maxOutputTokens: maxTokens, temperature: 0.9 },
       }),
     });
 
