@@ -380,10 +380,10 @@ async function getRecommendedAssets(userInput,opts){
   var isCreative=opts&&opts.creativeMode;
   var contextAware=opts&&opts.contextAware;
   var replyStyle=`reply 작성 규칙:
-- 딱딱하고 형식적인 말투는 피하고, 동료에게 편하게 이야기하듯 자연스럽고 친근하게 답변하세요.
-- 사용자의 상황이나 맥락에 공감하는 한마디를 넣어주세요. (예: "오 재밌겠네요!", "타이트하시겠다…", "좋은 프로젝트네요!")
-- 추천 이유를 간단히 설명하되, 위키 내용을 앵무새처럼 반복하지 말고 자기 말로 풀어서 설명하세요.
-- 오른쪽에 추천 목록이 표시된다고 자연스럽게 안내해주세요.
+- 존댓말을 사용하되, 너무 딱딱하거나 형식적이지 않게 친절하고 자연스러운 톤으로 답변하세요.
+- 과하게 가볍거나 감탄사("오!", "와!" 등)를 남발하지 마세요.
+- 사용자의 질문이나 요청에 정확하고 구체적으로 답변하세요. 핵심을 먼저 말하고 부가 설명을 덧붙이세요.
+- 추천한 어셋이 왜 필요한지 간결하게 설명하고, 오른쪽에 목록이 표시된다고 안내해주세요.
 - 2~4문장, 한국어로 작성.`;
 
   var prompt=isCreative
@@ -395,11 +395,10 @@ async function getRecommendedAssets(userInput,opts){
 다음 JSON 형식으로만 응답하세요.
 {
   "reply": "자연스러운 한국어 답변",
-  "assets": [
-    { "name": "위키에 있는 작업명 그대로", "duration": "예: 6~8주", "details": ["상세 1"] }
-  ]
+  "assets": [ { "name": "위키에 있는 작업명 그대로", "duration": "예: 6~8주", "details": ["상세 1"] } ]
 }
 ${replyStyle}
+**중요**: 사용자가 작업 기간, 절차, 수정 횟수 등 질문을 한 경우 reply에서 위키 내용을 참고하여 정확히 답변하세요. 어셋 추천이 필요 없는 질문이면 assets는 빈 배열 []로 두세요.
 규칙: assets는 위키에 나온 작업명만 사용. 최대 6개. duration·details는 위키 참고.`
     :contextAware
     ?`당신은 게임/IP 크리에이티브(디자인·비디오) 팀의 도우미입니다.
@@ -424,6 +423,7 @@ ${replyStyle}
   "assets": [ { "name": "위키 작업명 그대로", "duration": "예: 6~8주", "details": ["상세"] } ]
 }
 ${replyStyle}
+**중요**: 사용자가 기간, 절차, 비용, 수정 횟수 등을 질문한 경우 reply에서 위키를 참고해 정확히 답변하세요. 어셋 추천이 필요 없으면 assets는 빈 배열 []로 두세요.
 규칙: assets의 name은 위키에 있는 이름만. 디자인·비디오 섞지 마세요.`
     :`당신은 게임/IP 마케팅 디자인 팀의 도우미입니다.
 사용자 입력: "${userInput}"
@@ -439,6 +439,7 @@ ${replyStyle}
 }
 
 ${replyStyle}
+**중요**: 사용자가 기간, 절차, 비용, 수정 횟수 등을 질문한 경우 reply에서 위키를 참고해 정확히 답변하세요. 어셋 추천이 필요 없으면 assets는 빈 배열 []로 두세요.
 assets 규칙:
 - name은 반드시 아래 중 하나만 사용: KEYART, Logo, Brand Guide, Youtube Thumbnail, SNS Images, PR Images, OOH / Poster, Package, Goods. 이 외 항목은 추천하지 마세요.
 - **사용자가 특정 작업을 직접 언급한 경우 해당 항목만 추천하세요. 요청하지 않은 항목을 임의로 추가하지 마세요.**
@@ -453,13 +454,13 @@ assets 규칙:
     const objMatch=jsonStr.match(/\{[\s\S]*\}/);
     if(objMatch)jsonStr=objMatch[0];
     const parsed=JSON.parse(jsonStr);
-    const reply=parsed.reply&&String(parsed.reply).trim()?parsed.reply:'해당 상황에 맞는 어셋을 오른쪽에 표시했습니다.';
+    const reply=parsed.reply&&String(parsed.reply).trim()?parsed.reply:'궁금한 점이 있으시면 편하게 말씀해 주세요.';
     const assets=Array.isArray(parsed.assets)?parsed.assets:[];
     return {reply,assets};
   }catch(e){
     console.error('getRecommendedAssets failed:',e);
     return {
-      reply:'입력해 주신 상황에 맞는 어셋을 추천해 드리겠습니다. 오른쪽 패널을 확인해 주세요.',
+      reply:'죄송합니다, 일시적으로 응답을 가져오지 못했습니다. 다시 한번 말씀해 주세요.',
       assets:[]
     };
   }
@@ -580,6 +581,22 @@ function getCategoryFromAssetName(name){
 
 function escHtml(s){ return (s+'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+function syncDetailHeight(cardEl){
+  setTimeout(function(){
+    var preview=cardEl.querySelector('.asset-preview-wrap');
+    var left=cardEl.querySelector('.asset-detail-left');
+    if(!preview||!left)return;
+    var ph=preview.offsetHeight;
+    if(ph>0){
+      left.style.minHeight=ph+'px';
+      left.style.maxHeight=ph+'px';
+    }else{
+      left.style.minHeight='';
+      left.style.maxHeight='';
+    }
+  },50);
+}
+
 // 오른쪽 필요 어셋 패널 렌더 (바 스택 아코디언 + 인라인 타임라인)
 function renderAssetPanel(assets,opts){
   var list=document.getElementById('assetList');
@@ -674,6 +691,7 @@ function renderAssetPanel(assets,opts){
         more.title=willOpen?'접기':'더 알아보기';
         more.lastChild.textContent=willOpen?' 접기':' 더보기';
       }
+      if(willOpen) syncDetailHeight(el);
     }
     function goToRequestForm(){
       showRightSections();
@@ -736,6 +754,7 @@ function renderAssetPanel(assets,opts){
     firstItem.classList.add('open');
     var firstMore=firstItem.querySelector('.asset-more');
     if(firstMore){ firstMore.title='접기'; firstMore.lastChild.textContent=' 접기'; }
+    syncDetailHeight(firstItem);
   }
 }
 
@@ -1093,6 +1112,12 @@ async function autoFillForm(data,isUpdate=false){
     if(data.workType){
       selWork=data.workType;
       $('fWork').value=data.workType;
+      var wMeta=findWikiMetaForWorkType(data.workType);
+      if(wMeta){
+        selWeeks=parseWeeks(wMeta.duration)||null;
+        selSteps=wMeta.steps?countSteps(wMeta.steps):null;
+        selStepLabels=wMeta.steps?parseStepLabels(wMeta.steps):[];
+      }
     }
     setTimeout(()=>{
       const today=new Date();
@@ -1363,20 +1388,21 @@ async function sendChat(text){
       var allAssetsWithPart=[]; for(var pi=0;pi<parts.length;pi++){ var ax=await getWikiAssets(parts[pi]); (ax||[]).forEach(function(a){ a.part=parts[pi]; allAssetsWithPart.push(a); }); }
       var combinedWikiCtx=''; for(var wi=0;wi<parts.length;wi++){ var ctx2=await getWikiContext(parts[wi]); combinedWikiCtx+=(ctx2||'')+'\n\n'; }
       result=await getRecommendedAssets(v,{wikiContext:combinedWikiCtx,contextAware:true});
-      reply=result.reply||'입력하신 내용에 맞는 어셋을 오른쪽에 표시했습니다.';
+      reply=result.reply||'궁금한 점이 있으시면 편하게 말씀해 주세요.';
       var typingDel2=document.getElementById('typingMsg'); if(typingDel2)typingDel2.remove();
       addMsg(reply,false);
-      var matched=filterRecommendedByWikiAll(result.assets||[],allAssetsWithPart);
-      var targetPart='design'; for(var mi=0;mi<matched.length;mi++){ if(matched[mi].part==='video'){ targetPart='video'; break; } }
-      var thatPartAssets=allAssetsWithPart.filter(function(a){ return a.part===targetPart; });
-      toShow=matched.filter(function(a){ return a.part===targetPart; });
-      if(toShow.length) toShow=mergeWithWikiData(toShow,thatPartAssets);
-      else if(!result.assets||!result.assets.length) toShow=thatPartAssets.slice(0,6);
-      else toShow=mergeWithWikiData(result.assets.map(function(ra){ return {name:ra.name,duration:ra.duration||'',details:ra.details||[],images:[]}; }),thatPartAssets);
-      thatPartAssets.forEach(function(a){ if(a.images&&a.images.length) slidesByWorkType[a.name]=a.images; });
-      window.wikiAssets=thatPartAssets;
-      creativeAssetsMode=false;
-      switchPart(targetPart,function(){ renderAssetPanel(toShow.length?toShow:thatPartAssets.slice(0,6)); });
+      if(result.assets&&result.assets.length>0){
+        var matched=filterRecommendedByWikiAll(result.assets,allAssetsWithPart);
+        var targetPart='design'; for(var mi=0;mi<matched.length;mi++){ if(matched[mi].part==='video'){ targetPart='video'; break; } }
+        var thatPartAssets=allAssetsWithPart.filter(function(a){ return a.part===targetPart; });
+        toShow=matched.filter(function(a){ return a.part===targetPart; });
+        if(toShow.length) toShow=mergeWithWikiData(toShow,thatPartAssets);
+        else toShow=mergeWithWikiData(result.assets.map(function(ra){ return {name:ra.name,duration:ra.duration||'',details:ra.details||[],images:[]}; }),thatPartAssets);
+        thatPartAssets.forEach(function(a){ if(a.images&&a.images.length) slidesByWorkType[a.name]=a.images; });
+        window.wikiAssets=thatPartAssets;
+        creativeAssetsMode=false;
+        switchPart(targetPart,function(){ renderAssetPanel(toShow.length?toShow:thatPartAssets.slice(0,6)); });
+      }
     }
   }catch(e){
     var typing=document.getElementById('typingMsg');
@@ -1395,7 +1421,6 @@ async function sendChat(text){
     var shouldAutoFill=parsed&&(parsed.intent==='request'||parsed.intent==='question')&&hasFormData;
     if(shouldAutoFill){
       await autoFillForm(parsed,false);
-      addMsg('입력하신 내용을 <b>03. PROJECT DETAILS</b>에 반영해 두었어요. 확인 후 수정·보완해 주세요.',false);
       pendingData=null;
     }else if(parsed&&parsed.intent==='request'&&(parsed.category||parsed.workType||parsed.projectName)){
       pendingData=parsed;
@@ -1534,6 +1559,7 @@ function selectWork(el){
     targetCard.classList.add('open');
     var cardMore=targetCard.querySelector('.asset-more');
     if(cardMore){ cardMore.title='접기'; cardMore.lastChild.textContent=' 접기'; }
+    syncDetailHeight(targetCard);
     targetCard.scrollIntoView({behavior:'smooth'});
   }
 }
