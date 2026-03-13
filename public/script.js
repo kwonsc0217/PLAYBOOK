@@ -20,7 +20,7 @@ var creativeAssetsMode=false;  // IP 버튼 클릭 시 true → 01. CREATIVE ASS
 var currentDisplayedAssets=[];  // 현재 표시 중인 어셋 목록
 var fixedRecommendedAssets=[];  // AI 추천 고정 목록 (최대 5개)
 function showRightSections(){
-  var ids=['catInline','wfSec','faqSec'];
+  var ids=['catInline'];
   ids.forEach(function(id){ var el=document.getElementById(id); if(el)el.style.display=''; });
 }
 function updateAssetPanelTitle(){
@@ -459,10 +459,10 @@ assets 규칙:
     return {reply,assets};
   }catch(e){
     console.error('getRecommendedAssets failed:',e);
-    return {
-      reply:'죄송합니다, 일시적으로 응답을 가져오지 못했습니다. 다시 한번 말씀해 주세요.',
-      assets:[]
-    };
+    if(isCreative){
+      return {reply:'해당 상황에 맞는 크리에이티브 어셋을 오른쪽에 표시해 드렸습니다. 확인해 보세요.',assets:[]};
+    }
+    return {reply:'궁금한 점이 있으시면 편하게 말씀해 주세요.',assets:[]};
   }
 }
 
@@ -581,6 +581,36 @@ function getCategoryFromAssetName(name){
 
 function escHtml(s){ return (s+'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+function summarizeDetails(details,maxItems){
+  if(!Array.isArray(details)||!details.length)return [];
+  maxItems=maxItems||5;
+  var out=[];
+  for(var i=0;i<details.length&&out.length<maxItems;i++){
+    var d=String(details[i]).trim();
+    if(!d)continue;
+    var sentences=d.match(/[^.!?。]+[.!?。]\s?/g);
+    if(sentences&&sentences.length>0){
+      var first=sentences[0].trim();
+      if(first.length>80){
+        var sp=first.lastIndexOf(' ',76);
+        if(sp<20) sp=first.lastIndexOf(',',76);
+        if(sp<20) sp=76;
+        first=first.substring(0,sp).replace(/[,\s]+$/,'')+'…';
+      }
+      out.push(first);
+    }else{
+      if(d.length>80){
+        var sp2=d.lastIndexOf(' ',76);
+        if(sp2<20) sp2=d.lastIndexOf(',',76);
+        if(sp2<20) sp2=76;
+        d=d.substring(0,sp2).replace(/[,\s]+$/,'')+'…';
+      }
+      out.push(d);
+    }
+  }
+  return out;
+}
+
 function syncDetailHeight(cardEl){
   setTimeout(function(){
     var preview=cardEl.querySelector('.asset-preview-wrap');
@@ -621,14 +651,15 @@ function renderAssetPanel(assets,opts){
       var name=escHtml(rawName);
       var duration=escHtml(a.duration||'')||'-';
       var details=Array.isArray(a.details)?a.details:[];
+      var shortDetails=summarizeDetails(details,5);
       var images=a.images||slidesByWorkType[rawName]||[];
       var stepsCount=a.steps?countSteps(a.steps):0;
       var category=escHtml(a.category||'');
       var infoHtml='';
       var detailHtml='';
-      if(details.length){
+      if(shortDetails.length){
         detailHtml='<div class="asset-notice-title">세부 유의 사항</div>'
-          +'<ul>'+details.map(function(d){return '<li>'+escHtml(d)+'</li>';}).join('')+'</ul>';
+          +'<ul>'+shortDetails.map(function(d){return '<li>'+escHtml(d)+'</li>';}).join('')+'</ul>';
       }
       var hasImages=images.length>0;
       var imageHtml='';
@@ -1375,7 +1406,7 @@ async function sendChat(text){
       var allAssets=[]; for(var pi=0;pi<parts.length;pi++){ var ax=await getWikiAssets(parts[pi]); allAssets=allAssets.concat(ax||[]); }
       var combinedWiki=''; for(var wi=0;wi<parts.length;wi++){ var ctx=await getWikiContext(parts[wi]); combinedWiki+=(ctx||'')+'\n\n'; }
       result=await getRecommendedAssets(v,{wikiContext:combinedWiki,creativeMode:true});
-      reply=result.reply||'해당 IP 상황에 맞는 크리에이티브 어셋을 추천했습니다.';
+      reply=result.reply||'해당 상황에 맞는 크리에이티브 어셋을 오른쪽에 표시해 드렸습니다. 확인해 보세요.';
       var typingDel=document.getElementById('typingMsg'); if(typingDel)typingDel.remove();
       addMsg(reply,false);
       toShow=filterRecommendedByWikiAll(result.assets||[],allAssets);
@@ -1407,7 +1438,7 @@ async function sendChat(text){
   }catch(e){
     var typing=document.getElementById('typingMsg');
     if(typing)typing.remove();
-    addMsg('연결에 실패했습니다. 잠시 후 다시 시도해 주세요.',false);
+    addMsg('응답을 가져오는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',false);
     getWikiAssets().then(function(assets){ var a=currentPart==='design'?filterByAllowedAssets(assets):(assets||[]); if(a.length)a=mergeWithWikiData(a,assets); renderAssetPanel(a); });
   }
 
