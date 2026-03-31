@@ -379,12 +379,11 @@ async function callGemini(prompt,maxTokens=500,opts){
 async function getRecommendedAssets(userInput,opts){
   var isCreative=opts&&opts.creativeMode;
   var contextAware=opts&&opts.contextAware;
-  var replyStyle=`reply 작성 규칙:
-- 존댓말을 사용하되, 너무 딱딱하거나 형식적이지 않게 친절하고 자연스러운 톤으로 답변하세요.
-- 과하게 가볍거나 감탄사("오!", "와!" 등)를 남발하지 마세요.
-- 사용자의 질문이나 요청에 정확하고 구체적으로 답변하세요. 핵심을 먼저 말하고 부가 설명을 덧붙이세요.
-- 추천한 어셋이 왜 필요한지 간결하게 설명하고, 오른쪽에 목록이 표시된다고 안내해주세요.
-- 2~4문장, 한국어로 작성.`;
+  var replyStyle=`reply 작성 방식:
+- 동료에게 말하듯 자연스럽게 써주세요. 보고서나 안내문 느낌은 피하세요.
+- 존댓말은 유지하되, "말씀드리겠습니다" 같은 형식적인 표현은 생략하세요.
+- 상황에 맞게 어셋이 왜 필요한지 간단히 설명하고, 오른쪽에서 확인할 수 있다고 안내해주세요.
+- 한국어로 작성. 문장 수는 내용에 맞게 자유롭게 조절하세요.`;
 
   var prompt=isCreative
     ?`당신은 게임/IP 크리에이티브(디자인·비디오 등) 팀의 도우미입니다.
@@ -581,11 +580,10 @@ function getCategoryFromAssetName(name){
 
 function escHtml(s){ return (s+'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-function summarizeDetails(details,maxItems){
+function summarizeDetails(details){
   if(!Array.isArray(details)||!details.length)return [];
-  maxItems=maxItems||5;
   var out=[];
-  for(var i=0;i<details.length&&out.length<maxItems;i++){
+  for(var i=0;i<details.length;i++){
     var d=String(details[i]).trim();
     if(!d)continue;
     var sentences=d.match(/[^.!?。]+[.!?。]\s?/g);
@@ -651,7 +649,7 @@ function renderAssetPanel(assets,opts){
       var name=escHtml(rawName);
       var duration=escHtml(a.duration||'')||'-';
       var details=Array.isArray(a.details)?a.details:[];
-      var shortDetails=summarizeDetails(details,5);
+      var shortDetails=summarizeDetails(details);
       var images=a.images||slidesByWorkType[rawName]||[];
       var stepsCount=a.steps?countSteps(a.steps):0;
       var category=escHtml(a.category||'');
@@ -1098,7 +1096,7 @@ async function editField(field,value){
 // 자동 폼 채우기 (AI 정제 포함)
 async function autoFillForm(data,isUpdate=false){
   let hasFormData=false;
-  
+
   // 컨텍스트 업데이트
   if(data.projectName)projectContext.projectName=data.projectName;
   if(data.workType)projectContext.workType=data.workType;
@@ -1519,16 +1517,16 @@ function getMergedWorkItem(t){
 async function selectCat(cid,work){
   document.querySelectorAll('.cat-item').forEach(el=>el.classList.toggle('sel',el.dataset.c===cid));
   selCat=cid;
-  $('wtTitle').textContent=cats.find(c=>c.id===cid).nm+' 작업 선택';
+  var wtTitleEl=$('wtTitle'); if(wtTitleEl)wtTitleEl.textContent=cats.find(c=>c.id===cid).nm+' 작업 선택';
   try{
     var assets=await getWikiAssets();
     window.wikiAssets=assets||[];
   }catch(e){ window.wikiAssets=window.wikiAssets||[]; }
   (assets||[]).forEach(function(a){ if(a.images&&a.images.length) slidesByWorkType[a.name]=a.images; });
   var list=(wt[cid]||[]).map(getMergedWorkItem);
-  $('wtGrid').innerHTML=list.map(t=>`<div class="cat-item" data-w="${t.n}" data-wk="${t.w}" data-wk-display="${(t.wDisplay||t.w+'주').replace(/"/g,'&quot;')}" data-steps="${t.t}" data-step-labels="${encodeURIComponent(JSON.stringify(t.stepLabels||[]))}" data-nt="${encodeURIComponent(t.nt)}"><strong>${t.n}</strong></div>`).join('');
+  var wtGridEl=$('wtGrid'); if(wtGridEl)wtGridEl.innerHTML=list.map(t=>`<div class="cat-item" data-w="${t.n}" data-wk="${t.w}" data-wk-display="${(t.wDisplay||t.w+'주').replace(/"/g,'&quot;')}" data-steps="${t.t}" data-step-labels="${encodeURIComponent(JSON.stringify(t.stepLabels||[]))}" data-nt="${encodeURIComponent(t.nt)}"><strong>${t.n}</strong></div>`).join('');
   $('tlSec').style.display='none';
-  if(work)setTimeout(()=>{const el=[...$('wtGrid').children].find(e=>e.dataset.w.includes(work.split('/')[0]));if(el)selectWork(el);},50);
+  if(work)setTimeout(()=>{var wg=$('wtGrid');if(!wg)return;const el=[...wg.children].find(e=>e.dataset.w.includes(work.split('/')[0]));if(el)selectWork(el);},50);
 }
 
 // 위키 어셋명(wikiName)과 화면 작업 유형(selWork) 매칭 — 왼쪽(03. WORK TYPE)에 위키 기간·단계·이미지 반영
@@ -1571,7 +1569,7 @@ function selectWork(el){
   }else{
     renderAssetPanel(fixedRecommendedAssets.slice().concat([asset]),{keepFixed:true});
   }
-  $('fWork').value=selWork||'';
+  var fWorkEl=$('fWork'); if(fWorkEl)fWorkEl.value=selWork||'';
   var assetListEl=document.getElementById('assetList');
   if(!assetListEl)return;
   var allCards=assetListEl.querySelectorAll('.asset-item');
@@ -1597,7 +1595,7 @@ function selectWork(el){
 
 // 영상 URL 여부. 직접 재생: .mp4/.webm/.mov/.ogv, 임베드: youtube/vimeo
 function isVideoUrl(url){ if(!url||typeof url!=='string')return false; var u=url.toLowerCase(); return /\.(mp4|webm|mov|ogv)(\?|$)/i.test(u)||/youtube\.com|youtu\.be|vimeo\.com/i.test(u); }
-function getEmbedVideoUrl(url){ if(!url)return ''; var m=url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/); if(m)return 'https://www.youtube.com/embed/'+m[1]; m=url.match(/vimeo\.com\/(?:video\/)?(\d+)/); if(m)return 'https://player.vimeo.com/video/'+m[1]; return ''; }
+function getEmbedVideoUrl(url){ if(!url)return ''; var m=url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]+)/); if(m)return 'https://www.youtube.com/embed/'+m[1]; m=url.match(/vimeo\.com\/(?:video\/)?(\d+)/); if(m)return 'https://player.vimeo.com/video/'+m[1]; return ''; }
 function openSlideModal(url){ var modal=$('modal'); var img=$('modalImg'); var vid=$('modalVideo'); var wrap=document.getElementById('modalVideoWrap'); if(!modal)return; if(isVideoUrl(url)){ if(img)img.style.display='none'; if(wrap)wrap.style.display='none'; var embed=getEmbedVideoUrl(url); if(embed){ if(vid)vid.style.display='none'; if(!wrap){ wrap=document.createElement('div'); wrap.id='modalVideoWrap'; wrap.style.cssText='max-width:90vw;max-height:80vh'; vid.parentNode.insertBefore(wrap,vid); } wrap.innerHTML='<iframe src="'+embed+'" style="width:90vw;height:50vw;max-height:80vh;border:0" allowfullscreen></iframe>'; wrap.style.display='block'; } else { if(wrap)wrap.style.display='none'; if(vid){ vid.src=url; vid.style.display='block'; vid.play().catch(function(){}); } } } else { if(wrap){ wrap.innerHTML=''; wrap.style.display='none'; } if(vid){ vid.pause(); vid.src=''; vid.style.display='none'; } if(img){ img.src=url; img.style.display='block'; } } modal.classList.add('on'); }
 function closeSlideModal(){ var vid=$('modalVideo'); if(vid){ vid.pause(); vid.src=''; vid.style.display='none'; } var wrap=document.getElementById('modalVideoWrap'); if(wrap){ wrap.innerHTML=''; wrap.style.display='none'; } $('modal').classList.remove('on'); }
 // Slider — 이미지면 배경, 영상이면 <video> 또는 youtube/vimeo iframe

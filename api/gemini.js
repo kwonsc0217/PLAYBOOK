@@ -1,13 +1,11 @@
-import { hasVertexConfig, getVertexAccessToken } from '../lib/vertex.js';
+import { hasClaudeConfig, callClaudeForText } from '../lib/claude.js';
 
-const VERTEX_PROJECT =
-  process.env.GOOGLE_CLOUD_PROJECT || process.env.VERTEX_PROJECT || '';
-
-const VERTEX_LOCATION =
-  process.env.GOOGLE_CLOUD_LOCATION || process.env.VERTEX_LOCATION || 'us-central1';
-
-const VERTEX_MODEL =
-  process.env.VERTEX_MODEL || 'gemini-2.0-flash';
+const SYSTEM_PROMPT = `당신은 게임회사 크리에이티브팀의 도우미입니다.
+질문을 받으면 상황을 먼저 머릿속으로 파악한 뒤, 동료에게 말하듯 자연스럽게 답변하세요.
+- 존댓말을 쓰되, 딱딱한 보고서 느낌보다는 편하게 대화하는 느낌으로 해주세요.
+- 불필요한 인사말이나 "말씀드리겠습니다" 같은 형식적인 표현은 생략하세요.
+- 핵심 내용을 먼저 말하고, 필요한 경우에만 보충 설명을 추가하세요.
+- 감탄사("오!", "정말요?" 등)나 과도한 칭찬은 쓰지 마세요.`;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -19,9 +17,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!hasVertexConfig()) {
+  if (!hasClaudeConfig()) {
     return res.status(500).json({
-      error: 'Vertex AI 프로젝트가 없습니다. 환경변수 GOOGLE_CLOUD_PROJECT 또는 VERTEX_PROJECT를 설정하세요.',
+      error: 'Anthropic API 키가 없습니다. 환경변수 ANTHROPIC_API_KEY를 설정하세요.',
     });
   }
 
@@ -35,40 +33,12 @@ export default async function handler(req, res) {
         `${String(wikiContext).trim()}\n\n---\n\n${finalPrompt}`;
     }
 
-    const token = await getVertexAccessToken();
-
-    const url = `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_MODEL}:generateContent`;
-
-    const proxyRes = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: '당신은 게임회사 크리에이티브팀의 전문적이면서 친절한 담당자입니다. 존댓말을 사용하되 너무 딱딱하지 않게, 그러나 가볍거나 과하게 캐주얼하지 않은 톤을 유지하세요. 질문에는 정확하고 구체적으로 답변하세요.' }] },
-        contents: [{ role: 'user', parts: [{ text: finalPrompt }] }],
-        generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
-      }),
-    });
-
-    const raw = await proxyRes.text();
-    let data = {};
-
-    try {
-      data = raw ? JSON.parse(raw) : {};
-    } catch (_) {}
-
-    if (!proxyRes.ok) {
-      const msg = data?.error?.message || raw || `Vertex error: ${proxyRes.status}`;
-      return res.status(proxyRes.status).json({ error: msg });
-    }
-
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    return res.status(200).json({ text: String(text).trim() });
+    // Extended Thinking 활성화: 내부 추론 후 더 자연스러운 답변 생성
+    const text = await callClaudeForText(finalPrompt, maxTokens, SYSTEM_PROMPT, true, 3000);
+    return res.status(200).json({ text });
 
   } catch (e) {
-    console.error('[Vertex AI 오류]', e);
+    console.error('[Claude API 오류]', e);
     return res.status(500).json({ error: e?.message || String(e) });
   }
 }
