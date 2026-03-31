@@ -19,6 +19,7 @@ function partDisplayName(id){ return (id||'').charAt(0).toUpperCase()+(id||'').s
 var creativeAssetsMode=false;  // IP 버튼 클릭 시 true → 01. CREATIVE ASSETS 표시
 var currentDisplayedAssets=[];  // 현재 표시 중인 어셋 목록
 var fixedRecommendedAssets=[];  // AI 추천 고정 목록 (최대 5개)
+var chatHistory=[];  // 대화 기억: [{role:'user',content:'...'},{role:'assistant',content:'...'}]
 function showRightSections(){
   var ids=['catInline'];
   ids.forEach(function(id){ var el=document.getElementById(id); if(el)el.style.display=''; });
@@ -51,6 +52,7 @@ function goHome(){
   ['catInline','tlSec','formSec','wfSec','faqSec'].forEach(function(id){ var el=document.getElementById(id); if(el)el.style.display='none'; });
   currentDisplayedAssets=[];
   fixedRecommendedAssets=[];
+  chatHistory=[];  // 대화 기억 초기화
   selCat=null;selWork=null;selWeeks=null;selSteps=null;selStepLabels=[];
 }
 
@@ -385,9 +387,20 @@ async function getRecommendedAssets(userInput,opts){
 - 상황에 맞게 어셋이 왜 필요한지 간단히 설명하고, 오른쪽에서 확인할 수 있다고 안내해주세요.
 - 한국어로 작성. 문장 수는 내용에 맞게 자유롭게 조절하세요.`;
 
+  // 이전 대화 맥락 구성 (최근 10턴)
+  var historyBlock='';
+  if(chatHistory.length>0){
+    var recent=chatHistory.slice(-20); // 최근 10턴 (user+assistant 각 1 = 2 항목/턴)
+    historyBlock='[이전 대화 기록 — 맥락 참고용]\n';
+    for(var hi=0;hi<recent.length;hi++){
+      historyBlock+=(recent[hi].role==='user'?'사용자: ':'도우미: ')+recent[hi].content+'\n';
+    }
+    historyBlock+='---\n\n';
+  }
+
   var prompt=isCreative
     ?`당신은 게임/IP 크리에이티브(디자인·비디오 등) 팀의 도우미입니다.
-사용자 입력: "${userInput}"
+${historyBlock}사용자 입력: "${userInput}"
 
 위에 주어진 [팀 위키(도메인 지식)]에는 디자인·비디오 등 여러 작업 항목이 있습니다. 이 IP 상황에 맞는 항목을 위키에 적힌 이름 그대로 6개 이내로 추천하세요.
 
@@ -401,7 +414,7 @@ ${replyStyle}
 규칙: assets는 위키에 나온 작업명만 사용. 최대 6개. duration·details는 위키 참고.`
     :contextAware
     ?`당신은 게임/IP 크리에이티브(디자인·비디오) 팀의 도우미입니다.
-사용자 입력: "${userInput}"
+${historyBlock}사용자 입력: "${userInput}"
 
 위 [팀 위키]에는 디자인 작업(KEYART, Logo, Brand Guide, Youtube Thumbnail, SNS Images, PR Images, OOH / Poster, Package, Goods)과 비디오 작업(시네마틱 트레일러, 게임플레이 트레일러, 티저, 숏폼 영상 등)이 모두 나열되어 있습니다.
 
@@ -425,7 +438,7 @@ ${replyStyle}
 **중요**: 사용자가 기간, 절차, 비용, 수정 횟수 등을 질문한 경우 reply에서 위키를 참고해 정확히 답변하세요. 어셋 추천이 필요 없으면 assets는 빈 배열 []로 두세요.
 규칙: assets의 name은 위키에 있는 이름만. 디자인·비디오 섞지 마세요.`
     :`당신은 게임/IP 마케팅 디자인 팀의 도우미입니다.
-사용자 입력: "${userInput}"
+${historyBlock}사용자 입력: "${userInput}"
 
 위에 주어진 [팀 위키(도메인 지식)]에 나열된 작업(어셋) 항목만을 기준으로 추천하세요.
 
@@ -1379,6 +1392,7 @@ async function sendChat(text){
     addMsg('안녕하세요, GCD PLAYBOOK입니다. 어떤 작업을 도와드릴까요?',false);
   }
   addMsg(v,true);
+  chatHistory.push({role:'user',content:v});
 
   const msgsEl=$('msgs');
   const typingEl=document.createElement('div');
@@ -1407,6 +1421,7 @@ async function sendChat(text){
       reply=result.reply||'해당 상황에 맞는 크리에이티브 어셋을 오른쪽에 표시해 드렸습니다. 확인해 보세요.';
       var typingDel=document.getElementById('typingMsg'); if(typingDel)typingDel.remove();
       addMsg(reply,false);
+      chatHistory.push({role:'assistant',content:reply});
       toShow=filterRecommendedByWikiAll(result.assets||[],allAssets);
       if(!toShow.length)toShow=allAssets.slice(0,6); else toShow=mergeWithWikiData(toShow,allAssets).slice(0,6);
       window.wikiAssets=allAssets;
@@ -1420,6 +1435,7 @@ async function sendChat(text){
       reply=result.reply||'궁금한 점이 있으시면 편하게 말씀해 주세요.';
       var typingDel2=document.getElementById('typingMsg'); if(typingDel2)typingDel2.remove();
       addMsg(reply,false);
+      chatHistory.push({role:'assistant',content:reply});
       if(result.assets&&result.assets.length>0){
         var matched=filterRecommendedByWikiAll(result.assets,allAssetsWithPart);
         var targetPart='design'; for(var mi=0;mi<matched.length;mi++){ if(matched[mi].part==='video'){ targetPart='video'; break; } }
